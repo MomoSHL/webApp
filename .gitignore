@@ -1,0 +1,41 @@
+# ============================================================================
+# EA FC27 WebApp Bot - Git Ignore Rules
+# ============================================================================
+
+# Credentials & Environment Variables (NEVER COMMIT!)
+.env
+.env.*
+!.env.example
+
+# Saved Browser Sessions & Cookies (Contains sensitive EA session tokens!)
+cookies/
+*.pkl
+
+# Chrome Profile & Browser Cache
+chrome_profile/
+undetected_chromedriver/
+
+# Logs & Runtime Statistics
+logs/
+services/logs/
+*.log
+*stats.json
+
+# Python Artifacts & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+ENV/
+
+# IDE & OS-specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

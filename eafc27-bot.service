@@ -1,0 +1,25 @@
+[Unit]
+Description=EA FC27 WebApp Bot Service
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Passe hier deinen Ubuntu-Benutzernamen an (z. B. ubuntu, root, etc.)
+User=ubuntu
+
+# Passe hier den Pfad zu deinem Bot-Ordner an
+WorkingDirectory=/home/ubuntu/eafc27-bot
+ExecStart=/home/ubuntu/eafc27-bot/start_bot.sh
+
+# Automatischer Neustart bei Absturz oder Server-Reboot
+Restart=always
+RestartSec=30
+
+# Logging ins systemd Journal
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

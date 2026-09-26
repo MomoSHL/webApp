@@ -1,0 +1,12 @@
+# Core Dependencies
+selenium>=4.10.0
+webdriver-manager>=4.0.0
+undetected-chromedriver>=3.5.0
+pyyaml>=6.0
+apscheduler>=3.10.0
+setuptools>=65.0.0
+python-dotenv>=1.0.0
+
+# Platform-independent (works on Windows, Linux, macOS)
+# Note: Chrome/Chromium browser must be installed separately on Linux
+#       See LINUX_SETUP.md for Linux installation instructions

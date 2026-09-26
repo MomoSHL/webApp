@@ -1,0 +1,50 @@
+# Konfiguration für EA FC27 WebApp Bot
+
+mode: browser
+# headless: false = Browser bleibt offen (Live-Session, EMPFOHLEN für ersten Start / 2FA!)
+# headless: true = Browser im Hintergrund (Scheduler-Modus)
+headless: false
+test_mode: true  # true = einmalige Test-Ausführung, false = automatischer Scheduler
+
+# EA WebApp URL (Offizielle EA Sports FC WebApp)
+login_url: "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/"
+
+# Benutzeranmeldedaten (Sichere Speicherung empfohlen!)
+username: ""
+password: ""
+
+# UI Selektoren
+ui_selectors:
+  # ===== Login Selektoren =====
+  primary_login_button: "button.btn-standard.primary"
+  username: "input[name='email']"
+  password: "input[name='password']"
+  next_button: "a#logInBtn"
+  sign_in_button: "a#logInBtn"
+  
+  # ===== Transfer List Navigation =====
+  transfer_tab: "button.ut-tab-bar-item.icon-transfer"
+  transfer_tile: ".tile.col-1-2.ut-tile-transfer-list.ut-tile-transfers"
+  
+  # ===== Re-List Selektoren =====
+  transfer_list_items: "div.rowContent.has-tap-callback"  # Alle Items auf der Transferliste
+  player_name: "div.name"                                  # Spielername innerhalb eines Items
+  relist_all_button: "button.btn-standard.section-header-btn.mini.primary"  # "Re-list All" Button
+  confirm_yes_button: "button.btn-standard.primary"  # "Yes" Bestätigungsbutton
+  
+  # ===== Autobuyer Selektoren (für später) =====
+  search_tab: "PLACEHOLDER"
+  search_input: "PLACEHOLDER"
+  search_button: "PLACEHOLDER"
+  min_buy_button: "PLACEHOLDER"
+  max_buy_button: "PLACEHOLDER"
+
+  max_bid_button: "PLACEHOLDER"
+  min_bid_button: "PLACEHOLDER"
+
+# Zeitplan für automatische Ausführung
+schedule:
+  type: interval
+  hours: 1  # Alle 1 Stunde
+
+
