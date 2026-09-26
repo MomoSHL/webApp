@@ -436,7 +436,19 @@ def load_cookies(driver, username: str):
     filepath = get_cookie_filepath(username)
     
     if not filepath.exists():
-        return False
+        # Fallback 1: cookies_xxx.pkl Format
+        safe_name = username.replace('@', '_at_').replace('.', '_')
+        alt_path = COOKIES_DIR / f"cookies_{safe_name}.pkl"
+        if alt_path.exists():
+            filepath = alt_path
+        else:
+            # Fallback 2: Jede vorhandene .pkl Datei im cookies/ Ordner
+            pkl_files = list(COOKIES_DIR.glob("*.pkl"))
+            if pkl_files:
+                filepath = pkl_files[0]
+            else:
+                logger.warning(f"⚠️ Keine Cookie-Datei für '{username}' in {COOKIES_DIR} gefunden.")
+                return False
     
     try:
         with open(filepath, "rb") as f:
@@ -448,10 +460,10 @@ def load_cookies(driver, username: str):
             except Exception:
                 pass
         
-        logger.info("✅ Cookies geladen: {len(cookies)} Einträge")
+        logger.info(f"✅ Cookies geladen aus '{filepath.name}': {len(cookies)} Einträge")
         return True
     except Exception as e:
-        logger.warning("⚠️ Cookie-Laden fehlgeschlagen: {e}")
+        logger.warning(f"⚠️ Cookie-Laden fehlgeschlagen: {e}")
         return False
 
 
@@ -786,14 +798,52 @@ def login_via_ui(driver, cfg):
     selectors = cfg['ui_selectors']
     from selenium.webdriver.common.keys import Keys
     
-    # Klicke primären Login-Button auf der WebApp-Startseite
+    # Cookie-Consent Banner prüfen und akzeptieren (falls vorhanden)
     try:
-        btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, selectors['primary_login_button'])))
-        human_like_delay(0.5, 1.5)  # User überlegt vor Klick
-        btn.click()
+        cookie_banners = driver.find_elements(
+            By.CSS_SELECTOR, 
+            "#onetrust-accept-btn-handler, button#onetrust-accept-btn-handler, #btn-accept-all, button.cookie-accept-all"
+        )
+        for cb in cookie_banners:
+            if cb.is_displayed():
+                cb.click()
+                logger.info("✅ Cookie-Banner akzeptiert")
+                human_like_delay(1, 2)
+                break
+    except Exception:
+        pass
+        
+    # Klicke primären Login-Button auf der WebApp-Startseite
+    primary_selectors = [
+        selectors.get('primary_login_button', 'button.btn-standard.primary'),
+        "button.btn-standard.primary",
+        "button.ut-login-button",
+        "//button[contains(@class, 'btn-standard') and (contains(., 'Login') or contains(., 'Anmelden') or contains(@class, 'primary'))]",
+        "//button[contains(., 'Login') or contains(., 'Anmelden')]"
+    ]
+    
+    login_btn = None
+    for sel in primary_selectors:
+        try:
+            if sel.startswith("//"):
+                login_btn = wait.until(EC.element_to_be_clickable((By.XPATH, sel)))
+            else:
+                login_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
+            if login_btn:
+                break
+        except Exception:
+            continue
+            
+    if login_btn:
+        human_like_delay(0.5, 1.2)
+        try:
+            login_btn.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", login_btn)
         logger.info("✅ Login-Button geklickt")
-    except Exception as e:
-        logger.warning(f"⚠️ Primärer Login-Button nicht gefunden oder bereits auf Login-Seite: {e}")
+        human_like_delay(2, 4)
+    else:
+        logger.warning("⚠️ Primärer Login-Button nicht gefunden (möglicherweise bereits auf Login-Seite oder Seite lädt noch)")
     
     # Warte bis Login-Formular (signin.ea.com) geladen ist
     logger.info("⏳ Warte auf EA Anmeldeseite...")
