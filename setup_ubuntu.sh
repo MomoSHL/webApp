@@ -15,10 +15,20 @@ echo "============================================================"
 echo "🚀 EA FC27 WebApp Bot - Ubuntu Setup wird gestartet"
 echo "============================================================"
 
+# Prüfe ob sudo vorhanden ist (falls als root ausgeführt)
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+elif command -v sudo &> /dev/null; then
+    SUDO="sudo"
+else
+    echo "❌ Fehler: 'sudo' ist nicht installiert und das Skript wird nicht als root ausgeführt."
+    exit 1
+fi
+
 # 1. Systempakete aktualisieren & Basis-Tools installieren
 echo "📦 1/5: Installiere System-Abhängigkeiten..."
-sudo apt update
-sudo apt install -y \
+$SUDO apt update
+$SUDO apt install -y \
     python3 \
     python3-pip \
     python3-venv \
@@ -29,18 +39,7 @@ sudo apt install -y \
     xvfb \
     fonts-liberation \
     libnss3 \
-    libgconf-2-4 \
-    libfontconfig1 \
-    libxss1 \
-    libappindicator3-1 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxi6 \
-    libxtst6
+    xdg-utils
 
 # 2. Google Chrome installieren (falls noch nicht vorhanden)
 echo "🌐 2/5: Prüfe Google Chrome Installation..."
@@ -48,7 +47,7 @@ if ! command -v google-chrome &> /dev/null; then
     echo "   → Lade Google Chrome Stable herunter..."
     cd /tmp
     wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-    sudo apt install -y ./google-chrome-stable_current_amd64.deb
+    $SUDO apt install -y ./google-chrome-stable_current_amd64.deb
     rm -f google-chrome-stable_current_amd64.deb
     cd - > /dev/null
     echo "   ✓ Google Chrome erfolgreich installiert"
