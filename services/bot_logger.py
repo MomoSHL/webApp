@@ -21,8 +21,8 @@ from datetime import datetime
 from typing import Optional
 
 
-# Log-Verzeichnis
-LOG_DIR = Path(__file__).parent / "logs"
+# Log-Verzeichnis (im Projekt-Root)
+LOG_DIR = Path(__file__).parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 

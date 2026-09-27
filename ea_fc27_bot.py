@@ -488,12 +488,6 @@ def init_browser(headless: bool = True) -> uc.Chrome:
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--no-sandbox")
-    
-    # Linux-spezifisch: Deaktiviere GPU falls Probleme
-    if platform.system() == "Linux":
-        options.add_argument("--disable-gpu")
-        options.add_argument("--disable-software-rasterizer")
-    
     # WebRTC Leak Prevention (wichtig!)
     options.add_argument("--disable-webrtc")
     options.add_argument("--disable-webrtc-hw-encoding")
@@ -703,6 +697,80 @@ def handle_2fa(driver, wait):
 
 
 
+def save_page_diagnostics(driver, stage_name: str):
+    """
+    Speichert detaillierte Diagnose-Informationen (Screenshot, HTML-Dump, URL, Titel, DOM-Ausschnitt, Console-Logs).
+    """
+    try:
+        diag_dir = Path("logs") / "diagnostics"
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        prefix = f"{timestamp}_{stage_name}"
+        
+        # 1. Screenshot speichern
+        screenshot_path = diag_dir / f"{prefix}.png"
+        driver.save_screenshot(str(screenshot_path))
+        
+        # 2. HTML Quelle speichern
+        html_path = diag_dir / f"{prefix}.html"
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+            
+        # 3. Detaillierte Infos erfassen
+        cur_url = driver.current_url
+        cur_title = driver.title
+        
+        # Prüfe sichtbaren Text
+        try:
+            body_text = driver.find_element(By.TAG_NAME, "body").text.strip()
+            text_preview = " ".join(body_text.split()[:40])
+        except Exception:
+            text_preview = "N/A"
+            
+        # Prüfe gefundene Buttons
+        btn_info = []
+        try:
+            buttons = driver.find_elements(By.TAG_NAME, "button")
+            btn_info = [f"'{b.text.strip()}' ({b.get_attribute('class')})" for b in buttons if b.text.strip() or b.get_attribute('class')]
+        except Exception:
+            pass
+            
+        # Prüfe gefundene Inputs
+        inp_info = []
+        try:
+            inputs = driver.find_elements(By.TAG_NAME, "input")
+            inp_info = [f"name='{i.get_attribute('name')}' type='{i.get_attribute('type')}'" for i in inputs]
+        except Exception:
+            pass
+            
+        # Prüfe Browser Console Logs
+        console_logs = []
+        try:
+            raw_logs = driver.get_log("browser")
+            for entry in raw_logs:
+                if entry.get("level") in ["SEVERE", "WARNING"]:
+                    console_logs.append(f"[{entry.get('level')}] {entry.get('message')}")
+        except Exception:
+            pass
+            
+        logger.info(f"🔍 [DIAGNOSE - {stage_name}]")
+        logger.info(f"   • URL: {cur_url}")
+        logger.info(f"   • Titel: '{cur_title}'")
+        logger.info(f"   • Text-Auszug: {text_preview[:120]}...")
+        if btn_info:
+            logger.info(f"   • Buttons ({len(btn_info)}): {btn_info[:6]}")
+        if inp_info:
+            logger.info(f"   • Inputs ({len(inp_info)}): {inp_info[:6]}")
+        if console_logs:
+            logger.info(f"   • Browser-Fehler ({len(console_logs)}):")
+            for cl in console_logs[:3]:
+                logger.info(f"     ⚠ {cl}")
+        logger.info(f"   • Screenshot: {screenshot_path}")
+                
+    except Exception as e:
+        logger.debug(f"Diagnose-Erfassung fehlgeschlagen: {e}")
+
+
 def _check_and_accept_cookie_banner(driver) -> bool:
     """Prüft und akzeptiert OneTrust / Cookie Consent Banner falls vorhanden."""
     try:
@@ -850,6 +918,7 @@ def login_via_ui(driver, cfg):
     driver.get(cfg['login_url'])
     human_like_delay(2, 3)
     _check_and_accept_cookie_banner(driver)
+    save_page_diagnostics(driver, "01_page_opened")
     
     # 2. Gespeicherte Cookies laden (falls vorhanden)
     has_cookies = load_cookies(driver, username)
@@ -858,6 +927,7 @@ def login_via_ui(driver, cfg):
         driver.refresh()
         human_like_delay(2, 4)
         _check_and_accept_cookie_banner(driver)
+        save_page_diagnostics(driver, "02_after_cookies_refresh")
     
     random_mouse_movements(driver, num_movements=2)
     
@@ -870,6 +940,7 @@ def login_via_ui(driver, cfg):
     login_btn_elem = None
     email_elem = None
     last_log_time = 0
+    diagnostics_taken_15s = False
     
     while time.time() - start_time < max_wait:
         # Cookie Banner prüfen
@@ -882,10 +953,15 @@ def login_via_ui(driver, cfg):
             cur_url = driver.current_url
             cur_title = driver.title
             logger.info(f"⏳ WebApp lädt... ({elapsed}s/{int(max_wait)}s) [Titel: '{cur_title}']")
+            
+        if elapsed >= 15 and not diagnostics_taken_15s:
+            diagnostics_taken_15s = True
+            save_page_diagnostics(driver, "03_loading_15s")
         
         # Bereits auf anderem Gerät angemeldet?
         if check_already_logged_in_elsewhere(driver):
             logger.warning("⚠️ WebApp nicht verfügbar: Bereits auf anderem Gerät angemeldet")
+            save_page_diagnostics(driver, "err_device_conflict")
             return None
             
         # Prüfe ob bereits eingeloggt (Transfer Tab oder Navigation sichtbar)
@@ -902,6 +978,7 @@ def login_via_ui(driver, cfg):
                 if elems and any(e.is_displayed() for e in elems):
                     logger.info("✅ Bereits eingeloggt via Cookies / Session!")
                     save_cookies(driver, username)
+                    save_page_diagnostics(driver, "success_already_logged_in")
                     return True
             except Exception:
                 pass
@@ -967,6 +1044,7 @@ def login_via_ui(driver, cfg):
     if app_state == "LANDING_LOGIN" and login_btn_elem:
         btn_name = login_btn_elem.text.strip() if login_btn_elem.text else "Login"
         logger.info(f"🔑 Login-Button auf Startseite gefunden ('{btn_name}'), klicke...")
+        save_page_diagnostics(driver, "04_landing_button_found")
         human_like_delay(0.5, 1.2)
         try:
             login_btn_elem.click()
@@ -984,12 +1062,7 @@ def login_via_ui(driver, cfg):
             
     elif not app_state:
         logger.warning(f"⚠️ WebApp-Status nach Wartezeit unklar. URL: '{driver.current_url}', Titel: '{driver.title}'")
-        try:
-            Path("logs").mkdir(exist_ok=True)
-            driver.save_screenshot("logs/login_debug.png")
-            logger.info("📸 Debug-Screenshot gespeichert in 'logs/login_debug.png'")
-        except Exception:
-            pass
+        save_page_diagnostics(driver, "05_state_unknown")
             
         # Notfall: Suche nach passenden Buttons auf der Seite und klicke ggf.
         try:
@@ -1018,12 +1091,7 @@ def login_via_ui(driver, cfg):
     
     if not email_field:
         logger.error(f"❌ Email-Eingabefeld nicht gefunden! (URL: '{driver.current_url}', Titel: '{driver.title}')")
-        try:
-            Path("logs").mkdir(exist_ok=True)
-            driver.save_screenshot("logs/email_field_missing.png")
-            logger.error("📸 Fehler-Screenshot gespeichert in 'logs/email_field_missing.png'")
-        except Exception:
-            pass
+        save_page_diagnostics(driver, "06_email_field_missing")
         return False
 
     # Email eingeben
