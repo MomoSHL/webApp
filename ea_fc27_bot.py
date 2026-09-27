@@ -422,12 +422,13 @@ def save_cookies(driver, username: str):
     """Speichert Browser-Cookies für Account."""
     filepath = get_cookie_filepath(username)
     try:
+        filepath.parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, "wb") as f:
             pickle.dump(driver.get_cookies(), f)
-        logger.info("✅ Cookies gespeichert: {filepath.name}")
+        logger.info(f"✅ Cookies gespeichert: {filepath.name}")
         return True
     except Exception as e:
-        logger.warning("⚠️ Cookie-Speicherung fehlgeschlagen: {e}")
+        logger.warning(f"⚠️ Cookie-Speicherung fehlgeschlagen: {e}")
         return False
 
 
@@ -707,6 +708,56 @@ def handle_2fa(driver, wait):
         return False
 
 
+
+def _check_and_accept_cookie_banner(driver) -> bool:
+    """Prüft und akzeptiert OneTrust / Cookie Consent Banner falls vorhanden."""
+    try:
+        cookie_banners = driver.find_elements(
+            By.CSS_SELECTOR, 
+            "#onetrust-accept-btn-handler, button#onetrust-accept-btn-handler, #btn-accept-all, button.cookie-accept-all"
+        )
+        for cb in cookie_banners:
+            if cb.is_displayed() and cb.is_enabled():
+                try:
+                    cb.click()
+                except Exception:
+                    driver.execute_script("arguments[0].click();", cb)
+                logger.info("✅ Cookie-Banner akzeptiert")
+                human_like_delay(0.5, 1.0)
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def find_element_with_fallbacks(driver, selector_list, timeout=15, condition="clickable"):
+    """
+    Findet das erste passende Element aus einer Liste von Selektoren (CSS oder XPath),
+    ohne für jeden Selektor die volle Timeout-Dauer sequentiell zu blockieren.
+    """
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        for sel in selector_list:
+            if not sel:
+                continue
+            try:
+                if sel.startswith("//") or sel.startswith("("):
+                    elems = driver.find_elements(By.XPATH, sel)
+                else:
+                    elems = driver.find_elements(By.CSS_SELECTOR, sel)
+                for el in elems:
+                    if condition == "clickable" and el.is_displayed() and el.is_enabled():
+                        return el
+                    elif condition == "visible" and el.is_displayed():
+                        return el
+                    elif condition == "present":
+                        return el
+            except Exception:
+                continue
+        time.sleep(0.4)
+    return None
+
+
 def check_already_logged_in_elsewhere(driver):
     """
     Prüft ob User bereits auf anderem Gerät (z.B. PlayStation) angemeldet ist.
@@ -722,14 +773,14 @@ def check_already_logged_in_elsewhere(driver):
             "another device",
             "anderes gerät",
             "sign out on other device",
-            "auf einem anderen Gerät angemeldet",
+            "auf einem anderen gerät angemeldet",
         ]
         
         page_text = driver.page_source.lower()
         
         for error_text in error_texts:
             if error_text in page_text:
-                logger.warning("⚠️ Erkannt: Bereits auf anderem Gerät angemeldet ('{error_text}')")
+                logger.warning(f"⚠️ Erkannt: Bereits auf anderem Gerät angemeldet ('{error_text}')")
                 return True
         
         # Suche nach spezifischen Error-Containern
@@ -750,7 +801,7 @@ def check_already_logged_in_elsewhere(driver):
                 
                 error_text = error_elem.text.lower()
                 if any(err in error_text for err in ["already", "bereits", "other device", "anderes gerät"]):
-                    logger.warning("⚠️ Error-Element gefunden: {error_text[:100]}")
+                    logger.warning(f"⚠️ Error-Element gefunden: {error_text[:100]}")
                     return True
             except:
                 continue
@@ -758,110 +809,145 @@ def check_already_logged_in_elsewhere(driver):
         return False
         
     except Exception as e:
-        logger.debug("🔍 Debug: check_already_logged_in_elsewhere Fehler: {e}")
+        logger.debug(f"🔍 Debug: check_already_logged_in_elsewhere Fehler: {e}")
         return False
 
 
 def login_via_ui(driver, cfg):
     """
-    Login über UI mit Cookie-Persistenz und 2FA-Unterstützung.
+    Login über UI mit intelligenter Status-Erkennung, Cookie-Persistenz und 2FA-Unterstützung.
     Returns: True wenn erfolgreich, False wenn Fehler, None wenn "bereits angemeldet"
     """
-    username = cfg['username']
-    wait = WebDriverWait(driver, 20)
-    
-    # Versuche Cookies zu laden
-    driver.get(cfg['login_url'])
-    human_like_delay(2, 3)
-    
-    # Zufälliges Verhalten nach Page-Load (wichtig!)
-    random_mouse_movements(driver, num_movements=3)
-    human_like_delay(1, 3)  # User schaut sich Seite an
-    
-    # Prüfe ob bereits auf anderem Gerät angemeldet
-    if check_already_logged_in_elsewhere(driver):
-        logger.warning("⚠️ WebApp nicht verfügbar: Bereits auf anderem Gerät angemeldet")
-        return None  # Spezieller Rückgabewert für "bereits angemeldet"
-    
-    if load_cookies(driver, username):
-        driver.refresh()
-        human_like_delay(3, 5)
-        
-        # Prüfe ob bereits eingeloggt
-        try:
-            driver.find_element(By.CSS_SELECTOR, "button.ut-tab-bar-item.icon-transfer")
-            logger.info("✅ Bereits eingeloggt via Cookies!")
-            return True
-        except NoSuchElementException:
-            logger.warning("⚠️ Cookies ungültig, führe Login durch")
-    
-    selectors = cfg['ui_selectors']
+    username = cfg.get('username', '')
+    selectors = cfg.get('ui_selectors', {})
     from selenium.webdriver.common.keys import Keys
     
-    # Cookie-Consent Banner prüfen und akzeptieren (falls vorhanden)
-    try:
-        cookie_banners = driver.find_elements(
-            By.CSS_SELECTOR, 
-            "#onetrust-accept-btn-handler, button#onetrust-accept-btn-handler, #btn-accept-all, button.cookie-accept-all"
-        )
-        for cb in cookie_banners:
-            if cb.is_displayed():
-                cb.click()
-                logger.info("✅ Cookie-Banner akzeptiert")
-                human_like_delay(1, 2)
-                break
-    except Exception:
-        pass
-        
-    # Klicke primären Login-Button auf der WebApp-Startseite
-    primary_selectors = [
-        selectors.get('primary_login_button', 'button.btn-standard.primary'),
-        "button.btn-standard.primary",
-        "button.ut-login-button",
-        "//button[contains(@class, 'btn-standard') and (contains(., 'Login') or contains(., 'Anmelden') or contains(@class, 'primary'))]",
-        "//button[contains(., 'Login') or contains(., 'Anmelden')]"
-    ]
+    # 1. WebApp URL laden
+    logger.info("🌐 Öffne EA WebApp...")
+    driver.get(cfg['login_url'])
+    human_like_delay(2, 3)
+    _check_and_accept_cookie_banner(driver)
     
-    login_btn = None
-    for sel in primary_selectors:
-        try:
-            if sel.startswith("//"):
-                login_btn = wait.until(EC.element_to_be_clickable((By.XPATH, sel)))
-            else:
-                login_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
-            if login_btn:
-                break
-        except Exception:
-            continue
+    # 2. Gespeicherte Cookies laden (falls vorhanden)
+    has_cookies = load_cookies(driver, username)
+    if has_cookies:
+        logger.info("🔄 Aktualisiere Seite für Cookie-Authentifizierung...")
+        driver.refresh()
+        human_like_delay(2, 4)
+        _check_and_accept_cookie_banner(driver)
+    
+    random_mouse_movements(driver, num_movements=2)
+    
+    # 3. Warte intelligent auf aktuellen Status der WebApp (Logged In, Landing Button, Login Form, Device Conflict)
+    logger.info("⏳ Warte auf WebApp-Status (prüfe Cookies / Login)...")
+    
+    start_time = time.time()
+    max_wait = 35.0  # Bis zu 35 Sekunden für Initialisierung
+    app_state = None
+    login_btn_elem = None
+    email_elem = None
+    
+    while time.time() - start_time < max_wait:
+        # Cookie Banner prüfen
+        _check_and_accept_cookie_banner(driver)
+        
+        # Bereits auf anderem Gerät angemeldet?
+        if check_already_logged_in_elsewhere(driver):
+            logger.warning("⚠️ WebApp nicht verfügbar: Bereits auf anderem Gerät angemeldet")
+            return None
             
-    if login_btn:
+        # Prüfe ob bereits eingeloggt (Transfer Tab oder Navigation sichtbar)
+        for sel in [
+            "button.ut-tab-bar-item.icon-transfer",
+            ".ut-tab-bar-item.icon-transfer",
+            "button.icon-transfer",
+            ".ut-navigation-container-view",
+            ".ut-hub-view",
+            "button.ut-tab-bar-item"
+        ]:
+            try:
+                elems = driver.find_elements(By.CSS_SELECTOR, sel)
+                if elems and any(e.is_displayed() for e in elems):
+                    logger.info("✅ Bereits eingeloggt via Cookies / Session!")
+                    save_cookies(driver, username)
+                    return True
+            except Exception:
+                pass
+                
+        # Prüfe ob direkt auf EA-Anmeldeseite (Email-Feld)
+        for sel in ["input[name='email']", "input#email", "input[type='email']", "#email"]:
+            try:
+                elems = driver.find_elements(By.CSS_SELECTOR, sel)
+                for e in elems:
+                    if e.is_displayed() and e.is_enabled():
+                        app_state = "LOGIN_FORM"
+                        email_elem = e
+                        break
+                if app_state == "LOGIN_FORM":
+                    break
+            except Exception:
+                pass
+        if app_state == "LOGIN_FORM":
+            break
+            
+        # Prüfe ob Landing-Page Login-Button sichtbar ist
+        primary_candidate_selectors = [
+            selectors.get('primary_login_button', 'button.btn-standard.call-to-action'),
+            "button.btn-standard.call-to-action",
+            "button.call-to-action",
+            "button.btn-standard.primary",
+            "button.ut-login-button",
+            "button.btn-standard",
+            "//button[contains(@class, 'btn-standard') and (contains(., 'Login') or contains(., 'Anmelden') or contains(., 'Sign In') or contains(@class, 'call-to-action'))]",
+            "//button[contains(., 'Login') or contains(., 'Anmelden') or contains(., 'Sign In') or contains(., 'Einloggen')]"
+        ]
+        for sel in primary_candidate_selectors:
+            try:
+                if sel.startswith("//"):
+                    elems = driver.find_elements(By.XPATH, sel)
+                else:
+                    elems = driver.find_elements(By.CSS_SELECTOR, sel)
+                for e in elems:
+                    if e.is_displayed() and e.is_enabled():
+                        app_state = "LANDING_LOGIN"
+                        login_btn_elem = e
+                        break
+                if app_state == "LANDING_LOGIN":
+                    break
+            except Exception:
+                pass
+        if app_state == "LANDING_LOGIN":
+            break
+            
+        time.sleep(0.8)
+        
+    if has_cookies and app_state != "LOGGED_IN" and not app_state:
+        logger.warning("⚠️ Gespeicherte Cookies waren nicht ausreichend für Auto-Login, führe UI-Login durch...")
+    elif app_state == "LANDING_LOGIN":
+        logger.info("ℹ️ WebApp-Startseite geladen, Login erforderlich")
+        
+    if app_state == "LANDING_LOGIN" and login_btn_elem:
         human_like_delay(0.5, 1.2)
         try:
-            login_btn.click()
+            login_btn_elem.click()
         except Exception:
-            driver.execute_script("arguments[0].click();", login_btn)
-        logger.info("✅ Login-Button geklickt")
+            driver.execute_script("arguments[0].click();", login_btn_elem)
+        logger.info("✅ Login-Button auf Startseite geklickt")
         human_like_delay(2, 4)
-    else:
-        logger.warning("⚠️ Primärer Login-Button nicht gefunden (möglicherweise bereits auf Login-Seite oder Seite lädt noch)")
-    
+    elif not app_state:
+        logger.warning("⚠️ WebApp-Status nach Wartezeit unklar, versuche Login-Seite zu finden...")
+        
     # Warte bis Login-Formular (signin.ea.com) geladen ist
     logger.info("⏳ Warte auf EA Anmeldeseite...")
-    email_field = None
     email_selectors = [
         "input[name='email']",
         "input#email",
         "input[type='email']",
-        selectors.get('username', "input[name='email']")
+        selectors.get('username', "input[name='email']"),
+        "//input[@type='email' or @name='email' or @id='email']"
     ]
-    for sel in email_selectors:
-        try:
-            email_field = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
-            if email_field:
-                break
-        except Exception:
-            continue
-            
+    email_field = email_elem or find_element_with_fallbacks(driver, email_selectors, timeout=20, condition="clickable")
+    
     if not email_field:
         logger.error("❌ Email-Eingabefeld nicht gefunden!")
         return False
@@ -897,23 +983,16 @@ def login_via_ui(driver, cfg):
     
     # Next klicken
     try:
-        next_btn = None
         next_selectors = [
             "a#logInBtn",
             "button#logInBtn",
             "#logInBtn",
             selectors.get('next_button', 'a#logInBtn'),
-            "button[type='submit']"
+            "button[type='submit']",
+            "//button[contains(., 'Next') or contains(., 'Weiter') or contains(., 'Sign in')]",
+            "//a[contains(., 'Next') or contains(., 'Weiter') or contains(., 'Sign in')]"
         ]
-        for sel in next_selectors:
-            try:
-                candidate = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
-                if candidate.is_displayed():
-                    next_btn = candidate
-                    break
-            except Exception:
-                continue
-                
+        next_btn = find_element_with_fallbacks(driver, next_selectors, timeout=8, condition="clickable")
         if next_btn:
             human_like_delay(0.4, 0.8)
             next_btn.click()
@@ -934,27 +1013,20 @@ def login_via_ui(driver, cfg):
     
     # Passwort eingeben - WICHTIG: Warte bis das Feld wirklich SICHTBAR ist (Schritt 2)!
     logger.info("⏳ Warte auf Passwort-Feld (Schritt 2)...")
-    pwd_field = None
     pwd_selectors = [
         "input[name='password']",
         "input#password",
         "input[type='password']",
-        selectors.get('password', "input[name='password']")
+        selectors.get('password', "input[name='password']"),
+        "//input[@type='password' or @name='password' or @id='password']"
     ]
-    for sel in pwd_selectors:
-        try:
-            pwd_field = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, sel)))
-            if pwd_field:
-                break
-        except Exception:
-            continue
-            
+    pwd_field = find_element_with_fallbacks(driver, pwd_selectors, timeout=20, condition="visible")
+    
     if not pwd_field:
         logger.error("❌ Passwort-Feld nicht sichtbar geworden!")
         return False
 
     try:
-        wait.until(EC.element_to_be_clickable(pwd_field))
         human_like_delay(0.4, 0.8)
         pwd_field.click()
         time.sleep(0.2)
@@ -971,23 +1043,16 @@ def login_via_ui(driver, cfg):
     
     # Sign In klicken
     try:
-        sign_btn = None
         sign_selectors = [
             "a#logInBtn",
             "button#logInBtn",
             "#logInBtn",
             selectors.get('sign_in_button', 'a#logInBtn'),
-            "button[type='submit']"
+            "button[type='submit']",
+            "//button[contains(., 'Sign in') or contains(., 'Anmelden') or contains(., 'Log In')]",
+            "//a[contains(., 'Sign in') or contains(., 'Anmelden') or contains(., 'Log In')]"
         ]
-        for sel in sign_selectors:
-            try:
-                candidate = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
-                if candidate.is_displayed():
-                    sign_btn = candidate
-                    break
-            except Exception:
-                continue
-                
+        sign_btn = find_element_with_fallbacks(driver, sign_selectors, timeout=8, condition="clickable")
         if sign_btn:
             human_like_delay(0.4, 0.8)
             sign_btn.click()
@@ -999,7 +1064,7 @@ def login_via_ui(driver, cfg):
         logger.error(f"❌ Sign In fehlgeschlagen: {e}")
         return False
     
-    human_like_delay(3, 5)
+    human_like_delay(2, 4)
     
     # Prüfe auf Login-Fehlermeldungen auf der Seite
     for err in driver.find_elements(By.CSS_SELECTOR, ".origin-ux-element-error-message, .error, .banner-message, .otkform-error"):
@@ -1008,25 +1073,45 @@ def login_via_ui(driver, cfg):
             return False
             
     # 2FA behandeln
+    wait = WebDriverWait(driver, 20)
     if not handle_2fa(driver, wait):
         logger.error("❌ 2FA fehlgeschlagen")
         return False
     
-    # Warte bis WebApp wieder geladen ist
-    logger.info("⏳ Warte auf Weiterleitung zur WebApp...")
-    try:
-        WebDriverWait(driver, 30).until(
-            lambda d: "ea.com" in d.current_url and ("fut" in d.current_url.lower() or "ultimate-team" in d.current_url.lower())
-        )
-        human_like_delay(3, 5)
-    except Exception:
-        pass
-    
+    # Warte bis WebApp geladen ist
+    logger.info("⏳ Warte auf Laden der WebApp...")
+    hub_loaded = False
+    start_wait_hub = time.time()
+    while time.time() - start_wait_hub < 40:
+        _check_and_accept_cookie_banner(driver)
+        for sel in [
+            "button.ut-tab-bar-item.icon-transfer",
+            ".ut-tab-bar-item.icon-transfer",
+            "button.icon-transfer",
+            ".ut-navigation-container-view",
+            ".ut-hub-view",
+            "button.ut-tab-bar-item"
+        ]:
+            try:
+                elems = driver.find_elements(By.CSS_SELECTOR, sel)
+                if elems and any(e.is_displayed() for e in elems):
+                    hub_loaded = True
+                    break
+            except Exception:
+                pass
+        if hub_loaded:
+            break
+        time.sleep(1.0)
+        
     # Cookies speichern
     save_cookies(driver, username)
     
-    logger.info("✅ Login erfolgreich!\n")
-    return True
+    if hub_loaded:
+        logger.info("✅ Login erfolgreich und Ultimate Team Hub geladen!\n")
+        return True
+    else:
+        logger.warning("⚠️ WebApp Hub nicht eindeutig erkannt, fahre trotzdem fort...")
+        return True
 
 
 # ============================================================================
@@ -1038,7 +1123,6 @@ def navigate_to_transfer_list(driver, cfg):
     Navigiert zur Transfer-Liste.
     Returns: True wenn erfolgreich
     """
-    wait = WebDriverWait(driver, 15)
     selectors = cfg.get('ui_selectors', {})
     
     # 1. Prüfe ob wir bereits auf der Transfer-Liste sind
@@ -1063,23 +1147,13 @@ def navigate_to_transfer_list(driver, cfg):
             selectors.get('transfer_tab', 'button.ut-tab-bar-item.icon-transfer'),
             "button.ut-tab-bar-item.icon-transfer",
             "button.icon-transfer",
+            ".ut-tab-bar-item.icon-transfer",
             "//button[contains(@class, 'icon-transfer')]",
             "//button[contains(@class, 'ut-tab-bar-item') and contains(., 'Transfers')]",
             "//button[contains(., 'Transfers')]"
         ]
         
-        transfer_tab = None
-        for sel in tab_selectors:
-            try:
-                if sel.startswith("//"):
-                    transfer_tab = wait.until(EC.element_to_be_clickable((By.XPATH, sel)))
-                else:
-                    transfer_tab = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
-                if transfer_tab:
-                    break
-            except Exception:
-                continue
-                
+        transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=15, condition="clickable")
         if not transfer_tab:
             logger.error("❌ Transfer-Tab nicht gefunden")
             return False
@@ -1100,22 +1174,12 @@ def navigate_to_transfer_list(driver, cfg):
             selectors.get('transfer_tile', '.tile.col-1-2.ut-tile-transfer-list.ut-tile-transfers'),
             ".tile.col-1-2.ut-tile-transfer-list.ut-tile-transfers",
             ".ut-tile-transfer-list",
+            "div.ut-tile-transfer-list",
             "//div[contains(@class, 'ut-tile-transfer-list')]",
             "//div[contains(@class, 'tile') and (contains(., 'Transfer List') or contains(., 'Transferliste'))]"
         ]
         
-        transfer_tile = None
-        for sel in tile_selectors:
-            try:
-                if sel.startswith("//"):
-                    transfer_tile = wait.until(EC.element_to_be_clickable((By.XPATH, sel)))
-                else:
-                    transfer_tile = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
-                if transfer_tile:
-                    break
-            except Exception:
-                continue
-                
+        transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=15, condition="clickable")
         if not transfer_tile:
             logger.error("❌ Transfer-Liste Tile nicht gefunden")
             return False
@@ -1134,7 +1198,7 @@ def navigate_to_transfer_list(driver, cfg):
         
         return True
         
-    except (TimeoutException, NoSuchElementException) as e:
+    except Exception as e:
         logger.error(f"❌ Transfer-Navigation fehlgeschlagen: {e}")
         return False
 

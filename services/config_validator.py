@@ -258,9 +258,9 @@ def validate_config(config_path: str | Path) -> Dict[str, Any]:
     try:
         import os
         from dotenv import load_dotenv
-        env_file = config_path.parent / '.env'
+        env_file = Path(config_path).parent / '.env'
         if env_file.exists():
-            load_dotenv(env_file)
+            load_dotenv(env_file, override=True)
         if os.environ.get('EA_USERNAME'):
             config['username'] = os.environ.get('EA_USERNAME')
         if os.environ.get('EA_PASSWORD'):

@@ -16,7 +16,7 @@ password: ""
 # UI Selektoren
 ui_selectors:
   # ===== Login Selektoren =====
-  primary_login_button: "button.btn-standard.primary"
+  primary_login_button: "button.btn-standard.call-to-action, button.btn-standard.primary, button.ut-login-button"
   username: "input[name='email']"
   password: "input[name='password']"
   next_button: "a#logInBtn"
