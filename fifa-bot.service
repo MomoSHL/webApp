@@ -1,0 +1,15 @@
+[Unit]
+Description=EA Sports FC WebApp Relist Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/fifa/webApp-relist
+ExecStart=/home/fifa/webApp-relist/start_bot.sh
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
