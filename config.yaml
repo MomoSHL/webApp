@@ -1,15 +1,19 @@
 # Konfiguration für EA FC27 WebApp Bot
 
 mode: browser
-# headless: false = Browser bleibt offen (Live-Session, EMPFOHLEN für ersten Start / 2FA!)
-# headless: true = Browser im Hintergrund (Scheduler-Modus)
+# headless: false = Browser läuft im Xvfb mit vollem UI-Support (EMPFOHLEN)
+# headless: true = Browser im reinen Headless-Modus
 headless: false
-test_mode: true  # true = einmalige Test-Ausführung, false = automatischer Scheduler
+test_mode: false  # false = 24/7 Dauerbetrieb (Scheduler), true = Einmaliger Testlauf
+
+# Discord Webhook für Benachrichtigungen (optional)
+# Hier deine Discord Webhook URL einfügen, z.B. "https://discord.com/api/webhooks/..."
+discord_webhook: ""
 
 # EA WebApp URL (Offizielle EA Sports FC WebApp)
 login_url: "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/"
 
-# Benutzeranmeldedaten (Sichere Speicherung empfohlen!)
+# Benutzeranmeldedaten (können auch via .env Datei gesetzt werden: EA_USERNAME / EA_PASSWORD)
 username: ""
 password: ""
 

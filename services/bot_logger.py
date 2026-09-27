@@ -157,3 +157,29 @@ def log_info(logger: logging.Logger, message: str):
 def log_debug(logger: logging.Logger, message: str):
     """Logged Debug mit 🔍 Emoji."""
     logger.debug(f"🔍 {message}")
+
+
+_DISCORD_HANDLER: Optional[logging.Handler] = None
+
+
+def setup_discord_logging(webhook_url: Optional[str]):
+    """
+    Richtet Discord-Webhook-Handler für Bot-Logs ein (für INFO, WARNING, ERROR).
+    """
+    global _DISCORD_HANDLER
+    if not webhook_url or not webhook_url.startswith("http"):
+        return
+        
+    if _DISCORD_HANDLER is None:
+        from .discord_service import DiscordWebhookHandler
+        _DISCORD_HANDLER = DiscordWebhookHandler(webhook_url, level=logging.INFO)
+        
+        # Füge Handler zu allen aktiven und zukünftigen Loggern hinzu
+        logging.getLogger().addHandler(_DISCORD_HANDLER)
+        for name in list(logging.root.manager.loggerDict.keys()):
+            l = logging.getLogger(name)
+            if _DISCORD_HANDLER not in l.handlers:
+                l.addHandler(_DISCORD_HANDLER)
+                
+        get_logger(__name__).info("🎮 Discord Webhook-Benachrichtigungen aktiviert")
+

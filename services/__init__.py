@@ -7,7 +7,7 @@ Bot Service-Module für EA FC27 WebApp Bot.
 from .bot_config import BotConfig, load_config
 from .bot_session import BotSession, SessionState
 from .bot_main import EAFC27Bot, EAFC26Bot, create_bot
-from .bot_logger import get_logger, setup_bot_logging, log_section, log_success, log_error, log_warning, log_info
+from .bot_logger import get_logger, setup_bot_logging, setup_discord_logging, log_section, log_success, log_error, log_warning, log_info
 from .bot_stats import BotStatistics
 from .config_validator import validate_config, ConfigValidationError
 

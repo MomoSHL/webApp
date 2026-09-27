@@ -61,6 +61,9 @@ class BotConfig:
     # NEU: Chrome Binary Pfad (optional, für Linux ohne Root)
     chrome_binary: Optional[str] = None
     
+    # NEU: Discord Webhook URL für Benachrichtigungen (optional)
+    discord_webhook: Optional[str] = None
+    
     # Nested Config
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     ui_selectors: Dict[str, str] = field(default_factory=dict)
@@ -158,6 +161,12 @@ class BotConfig:
         test_mode = data.get('test_mode', True)
         if os.environ.get('EA_TEST_MODE') is not None:
             test_mode = os.environ.get('EA_TEST_MODE').strip().lower() in ('true', '1', 'yes')
+            
+        discord_webhook = os.environ.get('DISCORD_WEBHOOK') or data.get('discord_webhook') or data.get('discord_webhook_url')
+        if discord_webhook:
+            discord_webhook = str(discord_webhook).strip().strip('"\'')
+            if not discord_webhook.startswith('http'):
+                discord_webhook = None
         
         # Baue flache Struktur für BotConfig
         config_data = {
@@ -168,6 +177,7 @@ class BotConfig:
             'headless': headless,
             'test_mode': test_mode,
             'chrome_binary': chrome_binary,  # Kann None sein
+            'discord_webhook': discord_webhook,
             'schedule': data.get('schedule', {}),
             'ui_selectors': data.get('ui_selectors', {}),
             'delays': data.get('delays', {}),
@@ -190,6 +200,7 @@ class BotConfig:
             'mode': self.mode,
             'headless': self.headless,
             'test_mode': self.test_mode,
+            'discord_webhook': self.discord_webhook,
             'schedule': {
                 'type': self.schedule.type,
                 'hours': self.schedule.hours,
