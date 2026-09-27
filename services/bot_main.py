@@ -67,11 +67,11 @@ class EAFC27Bot:
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--no-sandbox')
         
-        # User Agent (nur falls explizit gesetzt)
-        from .browser_utils import get_platform_user_agent
+        # User Agent (immer Windows für EA Kompatibilität)
+        from .browser_utils import get_platform_user_agent, apply_stealth_overrides
         ua = get_platform_user_agent()
-        if ua:
-            options.add_argument(f'--user-agent={ua}')
+        options.add_argument(f'--user-agent={ua}')
+        options.add_argument('--lang=de-DE')
         
         # NEU: Chrome Binary aus Config (falls gesetzt)
         if self.config.chrome_binary:
@@ -86,6 +86,9 @@ class EAFC27Bot:
         # Erstelle Driver
         try:
             driver = uc.Chrome(options=options, version_main=None)
+            
+            # Stealth & Windows-Spoofing Overrides via CDP
+            apply_stealth_overrides(driver, ua)
             
             # Kleine Pause damit Browser richtig startet
             import time

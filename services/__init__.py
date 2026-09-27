@@ -21,7 +21,7 @@ def __getattr__(name):
         from . import bot_helpers
         return getattr(bot_helpers, name)
     elif name in (
-        'init_browser', 'get_platform_user_agent', 'save_cookies', 'load_cookies',
+        'init_browser', 'get_platform_user_agent', 'apply_stealth_overrides', 'save_cookies', 'load_cookies',
         'switch_to_idle_tab', 'switch_to_webapp_tab', 'check_already_logged_in_elsewhere'
     ):
         from . import browser_utils
@@ -72,6 +72,7 @@ __all__ = [
     # Browser Utils
     'init_browser',
     'get_platform_user_agent',
+    'apply_stealth_overrides',
     'save_cookies',
     'load_cookies',
     'switch_to_idle_tab',

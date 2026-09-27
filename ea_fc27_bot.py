@@ -469,14 +469,152 @@ def load_cookies(driver, username: str):
 
 
 # ============================================================================
-# BROWSER INITIALIZATION
+# BROWSER INITIALIZATION & ANTI-DETECTION
 # ============================================================================
 
-def get_platform_user_agent():
+WINDOWS_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+
+def get_platform_user_agent() -> str:
     """
-    Gibt Standard-User-Agent zurück oder None (damit undetected-chromedriver die native Chrome-Version nutzt).
+    Gibt immer einen Windows Desktop User-Agent zurück.
+    Verhindert die EA-Sperre ('Unsupported Browser / Browser not supported') unter Linux.
     """
-    return None
+    return WINDOWS_USER_AGENT
+
+
+def apply_stealth_overrides(driver, user_agent: Optional[str] = None) -> None:
+    """
+    Wendet umfassende Anti-Detection & Windows-Spoofing CDP Overrides an.
+    Bypasst die 'Browser not supported' Sperre von EA auf Linux/Headless-Servern.
+    """
+    if not user_agent:
+        user_agent = get_platform_user_agent()
+
+    # 1. Timezone & Locale via CDP
+    try:
+        driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {"timezoneId": "Europe/Berlin"})
+        driver.execute_cdp_cmd("Emulation.setLocaleOverride", {"locale": "de-DE"})
+    except Exception as e:
+        logger.debug(f"   ℹ️  CDP Emulation Override: {e}")
+
+    # 2. Network User Agent & Client Hints Override (CDP)
+    try:
+        driver.execute_cdp_cmd("Network.setUserAgentOverride", {
+            "userAgent": user_agent,
+            "acceptLanguage": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+            "platform": "Win32",
+            "userAgentMetadata": {
+                "brands": [
+                    {"brand": "Google Chrome", "version": "131"},
+                    {"brand": "Chromium", "version": "131"},
+                    {"brand": "Not_A Brand", "version": "24"}
+                ],
+                "fullVersionList": [
+                    {"brand": "Google Chrome", "version": "131.0.6778.86"},
+                    {"brand": "Chromium", "version": "131.0.6778.86"},
+                    {"brand": "Not_A Brand", "version": "24.0.0.0"}
+                ],
+                "platform": "Windows",
+                "platformVersion": "10.0.0",
+                "architecture": "x86",
+                "model": "",
+                "mobile": False,
+                "bitness": "64"
+            }
+        })
+    except Exception as e:
+        logger.debug(f"   ℹ️  CDP Network.setUserAgentOverride: {e}")
+
+    # 3. JavaScript Injektion vor jedem Laden (navigator.platform, userAgentData, WebGL)
+    stealth_js = """
+    // Spoof navigator.platform (kritisch für EA WebApp auf Linux)
+    Object.defineProperty(navigator, 'platform', {
+        get: () => 'Win32'
+    });
+
+    // Spoof navigator.vendor
+    Object.defineProperty(navigator, 'vendor', {
+        get: () => 'Google Inc.'
+    });
+
+    // Spoof navigator.maxTouchPoints
+    Object.defineProperty(navigator, 'maxTouchPoints', {
+        get: () => 0
+    });
+
+    // Spoof navigator.webdriver
+    Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined
+    });
+
+    // Spoof navigator.userAgentData (Client Hints)
+    if (navigator.userAgentData) {
+        const brands = [
+            {brand: 'Google Chrome', version: '131'},
+            {brand: 'Chromium', version: '131'},
+            {brand: 'Not_A Brand', version: '24'}
+        ];
+        const fullVersionList = [
+            {brand: 'Google Chrome', version: '131.0.6778.86'},
+            {brand: 'Chromium', version: '131.0.6778.86'},
+            {brand: 'Not_A Brand', version: '24.0.0.0'}
+        ];
+
+        Object.defineProperty(navigator, 'userAgentData', {
+            get: () => ({
+                brands: brands,
+                mobile: false,
+                platform: 'Windows',
+                getHighEntropyValues: async (hints) => ({
+                    architecture: 'x86',
+                    bitness: '64',
+                    brands: brands,
+                    fullVersionList: fullVersionList,
+                    mobile: false,
+                    model: '',
+                    platform: 'Windows',
+                    platformVersion: '10.0.0',
+                    uaFullVersion: '131.0.6778.86'
+                }),
+                toJSON: () => ({
+                    brands: brands,
+                    mobile: false,
+                    platform: 'Windows'
+                })
+            })
+        });
+    }
+
+    // WebGL Vendor & Renderer spoofing for headless/Xvfb (verhindert Mesa/Gallium/llvmpipe Leak)
+    const getParameterProxy = function(target, thisArg, args) {
+        const param = args[0];
+        if (param === 37445) {
+            return 'Google Inc. (NVIDIA)';
+        }
+        if (param === 37446) {
+            return 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+        }
+        return Reflect.apply(target, thisArg, args);
+    };
+
+    if (typeof WebGLRenderingContext !== 'undefined') {
+        WebGLRenderingContext.prototype.getParameter = new Proxy(
+            WebGLRenderingContext.prototype.getParameter,
+            { apply: getParameterProxy }
+        );
+    }
+    if (typeof WebGL2RenderingContext !== 'undefined') {
+        WebGL2RenderingContext.prototype.getParameter = new Proxy(
+            WebGL2RenderingContext.prototype.getParameter,
+            { apply: getParameterProxy }
+        );
+    }
+    """
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": stealth_js})
+    except Exception as e:
+        logger.debug(f"   ℹ️  CDP Page.addScriptToEvaluateOnNewDocument: {e}")
 
 
 def init_browser(headless: bool = True) -> uc.Chrome:
@@ -492,11 +630,10 @@ def init_browser(headless: bool = True) -> uc.Chrome:
     options.add_argument("--disable-webrtc")
     options.add_argument("--disable-webrtc-hw-encoding")
     
-    # Plattform-spezifischer User-Agent (nur wenn explizit vorhanden)
+    # Plattform-spezifischer User-Agent (immer Windows für EA Kompatibilität)
     user_agent = get_platform_user_agent()
-    if user_agent:
-        options.add_argument(f"--user-agent={user_agent}")
-    logger.info(f"   🖥️  OS: {platform.system()} ({platform.release()})")
+    options.add_argument(f"--user-agent={user_agent}")
+    logger.info(f"   🖥️  OS: {platform.system()} ({platform.release()}) [Spoofed: Windows 10/11]")
     
     # Language & Locale
     options.add_argument("--lang=de-DE")
@@ -513,12 +650,8 @@ def init_browser(headless: bool = True) -> uc.Chrome:
     else:
         driver.maximize_window()
     
-    # Setze Timezone & Locale via CDP
-    try:
-        driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {"timezoneId": "Europe/Berlin"})
-        driver.execute_cdp_cmd("Emulation.setLocaleOverride", {"locale": "de-DE"})
-    except:
-        pass  # Ignoriere falls nicht unterstützt
+    # Anwenden der Stealth & Spoofing Overrides (CDP)
+    apply_stealth_overrides(driver, user_agent)
     
     logger.info("✅ Browser initialisiert (Erweiterte Anti-Detection aktiv)")
     return driver

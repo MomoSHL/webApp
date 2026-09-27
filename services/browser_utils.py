@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import aus ea_fc27_bot für Re-Export
 from ea_fc27_bot import (
     get_platform_user_agent,
+    apply_stealth_overrides,
     get_cookie_filepath,
     save_cookies,
     load_cookies,
@@ -28,7 +29,7 @@ from ea_fc27_bot import (
 
 def init_browser(config: Union[Dict, 'BotConfig'], user_agent: str = None) -> WebDriver:
     """
-    Initialisiert Browser mit undetected-chromedriver.
+    Initialisiert Browser mit undetected-chromedriver und Windows-Stealth-Spoofing.
     
     NEU: Unterstützt chrome_binary aus Config für Linux ohne Root!
     
@@ -50,11 +51,10 @@ def init_browser(config: Union[Dict, 'BotConfig'], user_agent: str = None) -> We
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
     
-    # User-Agent (nur falls explizit gesetzt)
+    # User-Agent (immer Windows für EA Kompatibilität)
     if not user_agent:
         user_agent = get_platform_user_agent()
-    if user_agent:
-        options.add_argument(f'--user-agent={user_agent}')
+    options.add_argument(f'--user-agent={user_agent}')
     
     # Weitere Optionen
     options.add_argument('--disable-blink-features=AutomationControlled')
@@ -62,6 +62,7 @@ def init_browser(config: Union[Dict, 'BotConfig'], user_agent: str = None) -> We
     options.add_argument('--disable-popup-blocking')
     options.add_argument('--start-maximized')
     options.add_argument('--disable-notifications')
+    options.add_argument('--lang=de-DE')
     
     # NEU: Custom Chrome Binary (falls gesetzt)
     chrome_binary = None
@@ -84,7 +85,8 @@ def init_browser(config: Union[Dict, 'BotConfig'], user_agent: str = None) -> We
     # Browser initialisieren
     try:
         driver = uc.Chrome(options=options, version_main=None)
-        logger.info("✅ Browser erfolgreich initialisiert")
+        apply_stealth_overrides(driver, user_agent)
+        logger.info("✅ Browser erfolgreich initialisiert (Stealth aktiv)")
         return driver
     except Exception as e:
         logger.error(f"❌ Browser-Initialisierung fehlgeschlagen: {e}")
@@ -95,6 +97,7 @@ def init_browser(config: Union[Dict, 'BotConfig'], user_agent: str = None) -> We
 __all__ = [
     'init_browser',
     'get_platform_user_agent',
+    'apply_stealth_overrides',
     'get_cookie_filepath',
     'save_cookies',
     'load_cookies',
