@@ -24,6 +24,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict, field
 
+from .bot_logger import get_logger
+
+logger = get_logger(__name__)
 
 STATS_FILE = Path(__file__).parent / "bot_stats.json"
 
@@ -338,7 +341,7 @@ class BotStatistics:
             with open(self.stats_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"⚠️ Statistiken konnten nicht gespeichert werden: {e}")
+            logger.warning(f"⚠️ Statistiken konnten nicht gespeichert werden: {e}")
     
     def get_summary(self) -> str:
         """
@@ -376,8 +379,8 @@ class BotStatistics:
         return "\n".join(lines)
     
     def print_summary(self):
-        """Gibt formatierte Zusammenfassung auf Console aus."""
-        print(self.get_summary())
+        """Gibt formatierte Zusammenfassung ins Log aus."""
+        logger.info(self.get_summary())
 
 
 # Beispiel-Usage

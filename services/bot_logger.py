@@ -1,70 +1,94 @@
 """
 🔍 Logging-Konfiguration für EA FC27 WebApp Bot
 ================================================
-Implementiert strukturiertes Logging mit:
-- Console Output (farbig, mit Emojis)
-- File Output (rotating logs)
-- Verschiedene Log-Level
-- Thread-safe
+Implementiert strukturiertes, dateibasiertes Logging mit:
+- bot.log: Sauberes Haupt-Log (INFO, WARNING, ERROR, CRITICAL) für 'tail -f logs/bot.log'
+- debug.log: Detailliertes Debug-Log (DEBUG, INFO, etc. inkl. Zeilennummern) für 'tail -f logs/debug.log'
+- Keine Terminal-Ausgabe im Normalbetrieb
+- Automatische Log-Rotation (10MB / 20MB)
 
 Usage:
-    from bot_logger import get_logger
+    from services.bot_logger import get_logger
     logger = get_logger(__name__)
     logger.info("✅ Operation successful")
+    logger.debug("🔍 Detaillierte Debug-Information")
 """
 
 import logging
 import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
-from datetime import datetime
 from typing import Optional
-
 
 # Log-Verzeichnis (im Projekt-Root)
 LOG_DIR = Path(__file__).parent.parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+BOT_LOG_PATH = LOG_DIR / "bot.log"
+DEBUG_LOG_PATH = LOG_DIR / "debug.log"
+
+# Globale Shared Handler (verhindert mehrfache File-Locks bei vielen Modulen)
+_MAIN_FILE_HANDLER: Optional[RotatingFileHandler] = None
+_DEBUG_FILE_HANDLER: Optional[RotatingFileHandler] = None
+_CONSOLE_HANDLER: Optional[logging.Handler] = None
 
 
-class EmojiFormatter(logging.Formatter):
-    """Custom Formatter der Emojis beibehält und farbig formatiert."""
-    
-    # ANSI Color Codes
-    COLORS = {
-        'DEBUG': '\033[36m',      # Cyan
-        'INFO': '\033[32m',       # Green
-        'WARNING': '\033[33m',    # Yellow
-        'ERROR': '\033[31m',      # Red
-        'CRITICAL': '\033[35m',   # Magenta
-        'RESET': '\033[0m'        # Reset
-    }
-    
-    def format(self, record):
-        """Formatiert Log-Record mit Farben (nur für Console)."""
-        # Füge Farbe hinzu wenn Terminal (nicht File)
-        if hasattr(self, 'use_colors') and self.use_colors:
-            levelname = record.levelname
-            if levelname in self.COLORS:
-                record.levelname = f"{self.COLORS[levelname]}{levelname}{self.COLORS['RESET']}"
-        
-        return super().format(record)
+def _get_main_file_handler() -> RotatingFileHandler:
+    global _MAIN_FILE_HANDLER
+    if _MAIN_FILE_HANDLER is None:
+        _MAIN_FILE_HANDLER = RotatingFileHandler(
+            BOT_LOG_PATH,
+            maxBytes=10 * 1024 * 1024,  # 10 MB
+            backupCount=5,
+            encoding='utf-8'
+        )
+        _MAIN_FILE_HANDLER.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)-8s | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        _MAIN_FILE_HANDLER.setFormatter(formatter)
+    return _MAIN_FILE_HANDLER
+
+
+def _get_debug_file_handler() -> RotatingFileHandler:
+    global _DEBUG_FILE_HANDLER
+    if _DEBUG_FILE_HANDLER is None:
+        _DEBUG_FILE_HANDLER = RotatingFileHandler(
+            DEBUG_LOG_PATH,
+            maxBytes=20 * 1024 * 1024,  # 20 MB
+            backupCount=5,
+            encoding='utf-8'
+        )
+        _DEBUG_FILE_HANDLER.setLevel(logging.DEBUG)
+        formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        _DEBUG_FILE_HANDLER.setFormatter(formatter)
+    return _DEBUG_FILE_HANDLER
 
 
 def get_logger(
     name: str,
-    level: int = logging.INFO,
+    level: int = logging.DEBUG,
     log_to_file: bool = True,
-    log_to_console: bool = True
+    log_to_console: bool = False
 ) -> logging.Logger:
     """
     Erstellt oder gibt existierenden Logger zurück.
     
+    Standardmäßig:
+    - log_to_console: False (stumm im Terminal)
+    - bot.log: Schreibt INFO, WARNING, ERROR, CRITICAL
+    - debug.log: Schreibt alle DEBUG- und Fehler-Meldungen
+    
     Args:
         name: Logger-Name (meist __name__)
-        level: Log-Level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_to_file: Logs in Datei schreiben
-        log_to_console: Logs in Console ausgeben
-    
+        level: Log-Level (Standard: DEBUG für volle Protokollierung in debug.log)
+        log_to_file: In bot.log und debug.log schreiben
+        log_to_console: In stdout schreiben (Standard: False)
+        
     Returns:
         Konfigurierter Logger
     """
@@ -75,59 +99,39 @@ def get_logger(
         return logger
     
     logger.setLevel(level)
-    logger.propagate = False  # Verhindere Propagation zu root logger
+    logger.propagate = False
     
-    # Format-Strings
-    console_format = '%(message)s'  # Nur Message (mit Emojis)
-    file_format = '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s'
-    
-    # Console Handler (mit Farben)
-    if log_to_console:
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(level)
-        console_formatter = EmojiFormatter(console_format)
-        console_formatter.use_colors = True
-        console_handler.setFormatter(console_formatter)
-        logger.addHandler(console_handler)
-    
-    # File Handler (mit Rotation)
+    # File-Handler hinzufügen
     if log_to_file:
-        log_file = LOG_DIR / f"bot_{datetime.now().strftime('%Y%m%d')}.log"
-        file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=10*1024*1024,  # 10 MB
-            backupCount=5,
-            encoding='utf-8'
-        )
-        file_handler.setLevel(level)
-        file_formatter = EmojiFormatter(file_format)
-        file_formatter.use_colors = False
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
+        logger.addHandler(_get_main_file_handler())
+        logger.addHandler(_get_debug_file_handler())
+    
+    # Console-Handler nur hinzufügen wenn explizit gewünscht
+    if log_to_console:
+        global _CONSOLE_HANDLER
+        if _CONSOLE_HANDLER is None:
+            _CONSOLE_HANDLER = logging.StreamHandler(sys.stdout)
+            _CONSOLE_HANDLER.setLevel(logging.INFO)
+            _CONSOLE_HANDLER.setFormatter(logging.Formatter('%(message)s'))
+        logger.addHandler(_CONSOLE_HANDLER)
     
     return logger
 
 
-def setup_bot_logging(verbose: bool = False) -> logging.Logger:
+def setup_bot_logging(verbose: bool = False, console: bool = False) -> logging.Logger:
     """
     Richtet Haupt-Bot-Logger ein.
-    
-    Args:
-        verbose: True = DEBUG-Level, False = INFO-Level
-    
-    Returns:
-        Konfigurierter Bot-Logger
     """
-    level = logging.DEBUG if verbose else logging.INFO
-    return get_logger('ea_fc27_bot', level=level)
+    level = logging.DEBUG
+    return get_logger('ea_fc27_bot', level=level, log_to_console=console)
 
 
 # Convenience-Funktionen für formatierte Logs
 def log_section(logger: logging.Logger, title: str, width: int = 60):
     """Logged einen formatierten Section-Header."""
-    logger.info("\n" + "="*width)
+    logger.info("\n" + "=" * width)
     logger.info(title)
-    logger.info("="*width + "\n")
+    logger.info("=" * width + "\n")
 
 
 def log_success(logger: logging.Logger, message: str):
@@ -153,25 +157,3 @@ def log_info(logger: logging.Logger, message: str):
 def log_debug(logger: logging.Logger, message: str):
     """Logged Debug mit 🔍 Emoji."""
     logger.debug(f"🔍 {message}")
-
-
-# Beispiel-Usage
-if __name__ == '__main__':
-    # Test Logging
-    logger = setup_bot_logging(verbose=True)
-    
-    log_section(logger, "🧪 LOGGING TEST")
-    
-    logger.debug("🔍 Debug message - nur für Entwicklung")
-    logger.info("ℹ️ Info message - normale Operation")
-    logger.warning("⚠️ Warning message - potentielles Problem")
-    logger.error("❌ Error message - Fehler aufgetreten")
-    logger.critical("💥 Critical message - schwerer Fehler!")
-    
-    log_success(logger, "Operation erfolgreich!")
-    log_error(logger, "Operation fehlgeschlagen!")
-    log_warning(logger, "Cookies veraltet")
-    log_info(logger, "Browser initialisiert")
-    log_debug(logger, "XPath: //button[contains(text(), 'Login')]")
-    
-    print(f"\n✓ Logs gespeichert in: {LOG_DIR}")
