@@ -67,9 +67,11 @@ class EAFC27Bot:
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--no-sandbox')
         
-        # User Agent
+        # User Agent (nur falls explizit gesetzt)
         from .browser_utils import get_platform_user_agent
-        options.add_argument(f'user-agent={get_platform_user_agent()}')
+        ua = get_platform_user_agent()
+        if ua:
+            options.add_argument(f'--user-agent={ua}')
         
         # NEU: Chrome Binary aus Config (falls gesetzt)
         if self.config.chrome_binary:

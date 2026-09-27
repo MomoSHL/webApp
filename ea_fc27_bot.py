@@ -474,16 +474,9 @@ def load_cookies(driver, username: str):
 
 def get_platform_user_agent():
     """
-    Gibt einen realistischen User-Agent für das aktuelle Betriebssystem zurück.
+    Gibt Standard-User-Agent zurück oder None (damit undetected-chromedriver die native Chrome-Version nutzt).
     """
-    system = platform.system()
-    
-    if system == "Linux":
-        return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    elif system == "Darwin":  # macOS
-        return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    else:  # Windows als Fallback
-        return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    return None
 
 
 def init_browser(headless: bool = True) -> uc.Chrome:
@@ -505,9 +498,10 @@ def init_browser(headless: bool = True) -> uc.Chrome:
     options.add_argument("--disable-webrtc")
     options.add_argument("--disable-webrtc-hw-encoding")
     
-    # Plattform-spezifischer User-Agent
+    # Plattform-spezifischer User-Agent (nur wenn explizit vorhanden)
     user_agent = get_platform_user_agent()
-    options.add_argument(f"--user-agent={user_agent}")
+    if user_agent:
+        options.add_argument(f"--user-agent={user_agent}")
     logger.info(f"   🖥️  OS: {platform.system()} ({platform.release()})")
     
     # Language & Locale
@@ -712,19 +706,48 @@ def handle_2fa(driver, wait):
 def _check_and_accept_cookie_banner(driver) -> bool:
     """Prüft und akzeptiert OneTrust / Cookie Consent Banner falls vorhanden."""
     try:
-        cookie_banners = driver.find_elements(
-            By.CSS_SELECTOR, 
-            "#onetrust-accept-btn-handler, button#onetrust-accept-btn-handler, #btn-accept-all, button.cookie-accept-all"
-        )
-        for cb in cookie_banners:
-            if cb.is_displayed() and cb.is_enabled():
-                try:
-                    cb.click()
-                except Exception:
-                    driver.execute_script("arguments[0].click();", cb)
-                logger.info("✅ Cookie-Banner akzeptiert")
-                human_like_delay(0.5, 1.0)
-                return True
+        cookie_selectors = [
+            "#onetrust-accept-btn-handler",
+            "button#onetrust-accept-btn-handler",
+            "#onetrust-reject-all-handler",
+            "button#onetrust-reject-all-handler",
+            "#accept-recommended-btn-handler",
+            "button#accept-recommended-btn-handler",
+            "#btn-accept-all",
+            "button.cookie-accept-all",
+            "button.onetrust-close-btn-handler",
+            "//button[contains(@id, 'onetrust-accept')]",
+            "//button[contains(@id, 'onetrust') and (contains(., 'Accept') or contains(., 'Akzeptieren') or contains(., 'Alle') or contains(., 'Agree') or contains(., 'Zustimmen'))]",
+            "//button[contains(., 'Accept All') or contains(., 'Alle akzeptieren') or contains(., 'Alle annehmen') or contains(., 'Zustimmen') or contains(., 'Akzeptieren')]",
+        ]
+        for sel in cookie_selectors:
+            try:
+                if sel.startswith("//"):
+                    elems = driver.find_elements(By.XPATH, sel)
+                else:
+                    elems = driver.find_elements(By.CSS_SELECTOR, sel)
+                for cb in elems:
+                    if cb.is_displayed() and cb.is_enabled():
+                        try:
+                            cb.click()
+                        except Exception:
+                            driver.execute_script("arguments[0].click();", cb)
+                        logger.info(f"✅ Cookie-Banner akzeptiert ('{cb.text.strip()}')")
+                        human_like_delay(0.5, 1.0)
+                        return True
+            except Exception:
+                continue
+                
+        # Entferne verbleibende OneTrust Overlays via JavaScript falls vorhanden
+        try:
+            driver.execute_script("""
+                const ot = document.getElementById('onetrust-consent-sdk');
+                if (ot) ot.style.display = 'none';
+                const backdrop = document.querySelector('.onetrust-pc-dark-filter');
+                if (backdrop) backdrop.style.display = 'none';
+            """)
+        except Exception:
+            pass
     except Exception:
         pass
     return False
@@ -839,17 +862,26 @@ def login_via_ui(driver, cfg):
     random_mouse_movements(driver, num_movements=2)
     
     # 3. Warte intelligent auf aktuellen Status der WebApp (Logged In, Landing Button, Login Form, Device Conflict)
-    logger.info("⏳ Warte auf WebApp-Status (prüfe Cookies / Login)...")
+    logger.info("⏳ Warte auf WebApp-Status (prüfe Cookies / Login-Button)...")
     
     start_time = time.time()
-    max_wait = 35.0  # Bis zu 35 Sekunden für Initialisierung
+    max_wait = 60.0  # Bis zu 60 Sekunden für vollständigen Start auf Server/Xvfb
     app_state = None
     login_btn_elem = None
     email_elem = None
+    last_log_time = 0
     
     while time.time() - start_time < max_wait:
         # Cookie Banner prüfen
         _check_and_accept_cookie_banner(driver)
+        
+        # Periodische Status-Logs
+        elapsed = int(time.time() - start_time)
+        if elapsed > 0 and elapsed % 10 == 0 and elapsed != last_log_time:
+            last_log_time = elapsed
+            cur_url = driver.current_url
+            cur_title = driver.title
+            logger.info(f"⏳ WebApp lädt... ({elapsed}s/{int(max_wait)}s) [Titel: '{cur_title}']")
         
         # Bereits auf anderem Gerät angemeldet?
         if check_already_logged_in_elsewhere(driver):
@@ -895,11 +927,16 @@ def login_via_ui(driver, cfg):
             selectors.get('primary_login_button', 'button.btn-standard.call-to-action'),
             "button.btn-standard.call-to-action",
             "button.call-to-action",
-            "button.btn-standard.primary",
             "button.ut-login-button",
+            "button.btn-standard.primary",
             "button.btn-standard",
+            ".ut-login-view button",
+            ".ut-landing-view button",
             "//button[contains(@class, 'btn-standard') and (contains(., 'Login') or contains(., 'Anmelden') or contains(., 'Sign In') or contains(@class, 'call-to-action'))]",
-            "//button[contains(., 'Login') or contains(., 'Anmelden') or contains(., 'Sign In') or contains(., 'Einloggen')]"
+            "//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'login') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'anmelden') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'sign in') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'einloggen')]",
+            "//button[contains(@class, 'call-to-action')]",
+            "//div[contains(@class, 'ut-login-view')]//button",
+            "//div[contains(@class, 'ut-landing-view')]//button",
         ]
         for sel in primary_candidate_selectors:
             try:
@@ -908,10 +945,16 @@ def login_via_ui(driver, cfg):
                 else:
                     elems = driver.find_elements(By.CSS_SELECTOR, sel)
                 for e in elems:
-                    if e.is_displayed() and e.is_enabled():
-                        app_state = "LANDING_LOGIN"
-                        login_btn_elem = e
-                        break
+                    try:
+                        if e.is_displayed() or "call-to-action" in (e.get_attribute("class") or ""):
+                            btn_text = (e.text or "").strip().lower()
+                            if any(w in btn_text for w in ["cookie", "datenschutz", "privacy", "settings", "einstellungen"]):
+                                continue
+                            app_state = "LANDING_LOGIN"
+                            login_btn_elem = e
+                            break
+                    except Exception:
+                        continue
                 if app_state == "LANDING_LOGIN":
                     break
             except Exception:
@@ -921,21 +964,45 @@ def login_via_ui(driver, cfg):
             
         time.sleep(0.8)
         
-    if has_cookies and app_state != "LOGGED_IN" and not app_state:
-        logger.warning("⚠️ Gespeicherte Cookies waren nicht ausreichend für Auto-Login, führe UI-Login durch...")
-    elif app_state == "LANDING_LOGIN":
-        logger.info("ℹ️ WebApp-Startseite geladen, Login erforderlich")
-        
     if app_state == "LANDING_LOGIN" and login_btn_elem:
+        btn_name = login_btn_elem.text.strip() if login_btn_elem.text else "Login"
+        logger.info(f"🔑 Login-Button auf Startseite gefunden ('{btn_name}'), klicke...")
         human_like_delay(0.5, 1.2)
         try:
             login_btn_elem.click()
         except Exception:
             driver.execute_script("arguments[0].click();", login_btn_elem)
-        logger.info("✅ Login-Button auf Startseite geklickt")
+        logger.info("✅ Login-Button geklickt, warte auf Weiterleitung zur EA Anmeldeseite...")
         human_like_delay(2, 4)
+        
+        # Warte auf Navigation zu signin.ea.com
+        start_nav = time.time()
+        while time.time() - start_nav < 15:
+            if "signin" in driver.current_url.lower() or "accounts.ea" in driver.current_url.lower():
+                break
+            time.sleep(0.5)
+            
     elif not app_state:
-        logger.warning("⚠️ WebApp-Status nach Wartezeit unklar, versuche Login-Seite zu finden...")
+        logger.warning(f"⚠️ WebApp-Status nach Wartezeit unklar. URL: '{driver.current_url}', Titel: '{driver.title}'")
+        try:
+            Path("logs").mkdir(exist_ok=True)
+            driver.save_screenshot("logs/login_debug.png")
+            logger.info("📸 Debug-Screenshot gespeichert in 'logs/login_debug.png'")
+        except Exception:
+            pass
+            
+        # Notfall: Suche nach passenden Buttons auf der Seite und klicke ggf.
+        try:
+            all_buttons = driver.find_elements(By.TAG_NAME, "button")
+            for btn in all_buttons:
+                btn_txt = (btn.text or "").strip().lower()
+                if any(k in btn_txt for k in ["login", "anmelden", "sign in", "einloggen"]) or "call-to-action" in (btn.get_attribute("class") or ""):
+                    logger.info(f"🔄 Notfall-Klick auf gefundenen Button: '{btn.text.strip()}'")
+                    driver.execute_script("arguments[0].click();", btn)
+                    human_like_delay(2, 4)
+                    break
+        except Exception:
+            pass
         
     # Warte bis Login-Formular (signin.ea.com) geladen ist
     logger.info("⏳ Warte auf EA Anmeldeseite...")
@@ -943,13 +1010,20 @@ def login_via_ui(driver, cfg):
         "input[name='email']",
         "input#email",
         "input[type='email']",
+        "#email",
         selectors.get('username', "input[name='email']"),
         "//input[@type='email' or @name='email' or @id='email']"
     ]
-    email_field = email_elem or find_element_with_fallbacks(driver, email_selectors, timeout=20, condition="clickable")
+    email_field = email_elem or find_element_with_fallbacks(driver, email_selectors, timeout=25, condition="clickable")
     
     if not email_field:
-        logger.error("❌ Email-Eingabefeld nicht gefunden!")
+        logger.error(f"❌ Email-Eingabefeld nicht gefunden! (URL: '{driver.current_url}', Titel: '{driver.title}')")
+        try:
+            Path("logs").mkdir(exist_ok=True)
+            driver.save_screenshot("logs/email_field_missing.png")
+            logger.error("📸 Fehler-Screenshot gespeichert in 'logs/email_field_missing.png'")
+        except Exception:
+            pass
         return False
 
     # Email eingeben

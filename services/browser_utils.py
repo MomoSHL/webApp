@@ -52,10 +52,11 @@ def init_browser(config: Union[Dict, 'BotConfig'], user_agent: str = None) -> We
         options.add_argument('--disable-gpu')
         options.add_argument('--disable-software-rasterizer')
     
-    # User-Agent
+    # User-Agent (nur falls explizit gesetzt)
     if not user_agent:
         user_agent = get_platform_user_agent()
-    options.add_argument(f'user-agent={user_agent}')
+    if user_agent:
+        options.add_argument(f'--user-agent={user_agent}')
     
     # Weitere Optionen
     options.add_argument('--disable-blink-features=AutomationControlled')
