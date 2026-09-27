@@ -66,6 +66,9 @@ class EAFC27Bot:
         options.add_argument('--disable-blink-features=AutomationControlled')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--no-sandbox')
+        options.add_argument('--ignore-gpu-blocklist')
+        options.add_argument('--enable-webgl')
+        options.add_argument('--enable-accelerated-2d-canvas')
         
         # User Agent (immer Windows für EA Kompatibilität)
         from .browser_utils import get_platform_user_agent, apply_stealth_overrides

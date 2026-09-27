@@ -491,6 +491,16 @@ def apply_stealth_overrides(driver, user_agent: Optional[str] = None) -> None:
     if not user_agent:
         user_agent = get_platform_user_agent()
 
+    # CDP Domains aktivieren
+    try:
+        driver.execute_cdp_cmd("Page.enable", {})
+    except Exception:
+        pass
+    try:
+        driver.execute_cdp_cmd("Network.enable", {})
+    except Exception:
+        pass
+
     # 1. Timezone & Locale via CDP
     try:
         driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {"timezoneId": "Europe/Berlin"})
@@ -527,46 +537,63 @@ def apply_stealth_overrides(driver, user_agent: Optional[str] = None) -> None:
         logger.debug(f"   ℹ️  CDP Network.setUserAgentOverride: {e}")
 
     # 3. JavaScript Injektion vor jedem Laden (navigator.platform, userAgentData, WebGL)
-    stealth_js = """
+    app_ver = user_agent.replace("Mozilla/", "")
+    stealth_js = f"""
     // Spoof navigator.platform (kritisch für EA WebApp auf Linux)
-    Object.defineProperty(navigator, 'platform', {
+    Object.defineProperty(navigator, 'platform', {{
         get: () => 'Win32'
-    });
+    }});
+
+    // Spoof navigator.userAgent & appVersion
+    Object.defineProperty(navigator, 'userAgent', {{
+        get: () => '{user_agent}'
+    }});
+    Object.defineProperty(navigator, 'appVersion', {{
+        get: () => '{app_ver}'
+    }});
 
     // Spoof navigator.vendor
-    Object.defineProperty(navigator, 'vendor', {
+    Object.defineProperty(navigator, 'vendor', {{
         get: () => 'Google Inc.'
-    });
+    }});
 
     // Spoof navigator.maxTouchPoints
-    Object.defineProperty(navigator, 'maxTouchPoints', {
+    Object.defineProperty(navigator, 'maxTouchPoints', {{
         get: () => 0
-    });
+    }});
 
     // Spoof navigator.webdriver
-    Object.defineProperty(navigator, 'webdriver', {
+    Object.defineProperty(navigator, 'webdriver', {{
         get: () => undefined
-    });
+    }});
+
+    // Chrome object mock
+    if (!window.chrome) {{
+        window.chrome = {{}};
+    }}
+    if (!window.chrome.runtime) {{
+        window.chrome.runtime = {{}};
+    }}
 
     // Spoof navigator.userAgentData (Client Hints)
-    if (navigator.userAgentData) {
+    if (navigator.userAgentData) {{
         const brands = [
-            {brand: 'Google Chrome', version: '131'},
-            {brand: 'Chromium', version: '131'},
-            {brand: 'Not_A Brand', version: '24'}
+            {{brand: 'Google Chrome', version: '131'}},
+            {{brand: 'Chromium', version: '131'}},
+            {{brand: 'Not_A Brand', version: '24'}}
         ];
         const fullVersionList = [
-            {brand: 'Google Chrome', version: '131.0.6778.86'},
-            {brand: 'Chromium', version: '131.0.6778.86'},
-            {brand: 'Not_A Brand', version: '24.0.0.0'}
+            {{brand: 'Google Chrome', version: '131.0.6778.86'}},
+            {{brand: 'Chromium', version: '131.0.6778.86'}},
+            {{brand: 'Not_A Brand', version: '24.0.0.0'}}
         ];
 
-        Object.defineProperty(navigator, 'userAgentData', {
-            get: () => ({
+        Object.defineProperty(navigator, 'userAgentData', {{
+            get: () => ({{
                 brands: brands,
                 mobile: false,
                 platform: 'Windows',
-                getHighEntropyValues: async (hints) => ({
+                getHighEntropyValues: async (hints) => ({{
                     architecture: 'x86',
                     bitness: '64',
                     brands: brands,
@@ -576,40 +603,40 @@ def apply_stealth_overrides(driver, user_agent: Optional[str] = None) -> None:
                     platform: 'Windows',
                     platformVersion: '10.0.0',
                     uaFullVersion: '131.0.6778.86'
-                }),
-                toJSON: () => ({
+                }}),
+                toJSON: () => ({{
                     brands: brands,
                     mobile: false,
                     platform: 'Windows'
-                })
-            })
-        });
-    }
+                }})
+            }})
+        }});
+    }}
 
     // WebGL Vendor & Renderer spoofing for headless/Xvfb (verhindert Mesa/Gallium/llvmpipe Leak)
-    const getParameterProxy = function(target, thisArg, args) {
+    const getParameterProxy = function(target, thisArg, args) {{
         const param = args[0];
-        if (param === 37445) {
+        if (param === 37445) {{
             return 'Google Inc. (NVIDIA)';
-        }
-        if (param === 37446) {
+        }}
+        if (param === 37446) {{
             return 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)';
-        }
+        }}
         return Reflect.apply(target, thisArg, args);
-    };
+    }};
 
-    if (typeof WebGLRenderingContext !== 'undefined') {
+    if (typeof WebGLRenderingContext !== 'undefined') {{
         WebGLRenderingContext.prototype.getParameter = new Proxy(
             WebGLRenderingContext.prototype.getParameter,
-            { apply: getParameterProxy }
+            {{ apply: getParameterProxy }}
         );
-    }
-    if (typeof WebGL2RenderingContext !== 'undefined') {
+    }}
+    if (typeof WebGL2RenderingContext !== 'undefined') {{
         WebGL2RenderingContext.prototype.getParameter = new Proxy(
             WebGL2RenderingContext.prototype.getParameter,
-            { apply: getParameterProxy }
+            {{ apply: getParameterProxy }}
         );
-    }
+    }}
     """
     try:
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": stealth_js})
@@ -629,6 +656,11 @@ def init_browser(headless: bool = True) -> uc.Chrome:
     # WebRTC Leak Prevention (wichtig!)
     options.add_argument("--disable-webrtc")
     options.add_argument("--disable-webrtc-hw-encoding")
+    
+    # WebGL & GPU Enablement (für Linux/Xvfb ohne GPU-Block)
+    options.add_argument("--ignore-gpu-blocklist")
+    options.add_argument("--enable-webgl")
+    options.add_argument("--enable-accelerated-2d-canvas")
     
     # Plattform-spezifischer User-Agent (immer Windows für EA Kompatibilität)
     user_agent = get_platform_user_agent()
@@ -1050,6 +1082,15 @@ def login_via_ui(driver, cfg):
     logger.info("🌐 Öffne EA WebApp...")
     driver.get(cfg['login_url'])
     human_like_delay(2, 3)
+    
+    # Logge Browser-Identität für Server-Diagnose
+    try:
+        cur_plat = driver.execute_script("return navigator.platform;")
+        cur_ua = driver.execute_script("return navigator.userAgent;")
+        logger.info(f"   🔍 Browser-Identität: platform='{cur_plat}', UA='{cur_ua[:40]}...'")
+    except Exception:
+        pass
+        
     _check_and_accept_cookie_banner(driver)
     save_page_diagnostics(driver, "01_page_opened")
     

@@ -56,13 +56,16 @@ def init_browser(config: Union[Dict, 'BotConfig'], user_agent: str = None) -> We
         user_agent = get_platform_user_agent()
     options.add_argument(f'--user-agent={user_agent}')
     
-    # Weitere Optionen
+    # Weitere Optionen & Anti-Detection
     options.add_argument('--disable-blink-features=AutomationControlled')
     options.add_argument('--disable-extensions')
     options.add_argument('--disable-popup-blocking')
     options.add_argument('--start-maximized')
     options.add_argument('--disable-notifications')
     options.add_argument('--lang=de-DE')
+    options.add_argument('--ignore-gpu-blocklist')
+    options.add_argument('--enable-webgl')
+    options.add_argument('--enable-accelerated-2d-canvas')
     
     # NEU: Custom Chrome Binary (falls gesetzt)
     chrome_binary = None
