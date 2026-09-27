@@ -56,6 +56,26 @@ def run_test_mode(config: BotConfig):
     return 0 if success else 1
 
 
+def check_pause_state(driver=None):
+    """
+    Prüft ob eine Pause-Datei ('pause' oder '.pause') im Bot-Verzeichnis existiert.
+    Falls ja, wechselt der Bot in den Idle-Modus und pausiert, bis die Datei gelöscht wird.
+    """
+    pause_file = Path(__file__).parent / "pause"
+    alt_pause_file = Path(__file__).parent / ".pause"
+    
+    if pause_file.exists() or alt_pause_file.exists():
+        logger.info("⏸️ Bot pausiert: Pause-Befehl aktiv ('pause' Datei gefunden). Warte auf Fortsetzung ('rm pause')...")
+        if driver:
+            try:
+                switch_to_idle_tab(driver)
+            except Exception:
+                pass
+        while pause_file.exists() or alt_pause_file.exists():
+            time.sleep(5)
+        logger.info("▶️ Pause beendet: Bot setzt reguläre Arbeit fort!")
+
+
 def run_live_session_mode(config: BotConfig):
     """
     🔄 Live-Session Modus: Browser bleibt offen zwischen Jobs.
@@ -76,6 +96,9 @@ def run_live_session_mode(config: BotConfig):
     
     try:
         while True:
+            # Prüfe ob Pause aktiv ist
+            check_pause_state(bot.session.driver if bot.session else None)
+            
             # Prüfe Nachtpause (1:00 - 6:00 Uhr)
             if is_night_time(start_hour=1, end_hour=6):
                 sleep_seconds, wake_time = calculate_sleep_until_morning(wake_hour=6)
@@ -156,6 +179,7 @@ def run_live_session_mode(config: BotConfig):
             # Countdown-Schleife
             remaining = wait_seconds
             while remaining > 0:
+                check_pause_state(bot.session.driver if bot.session else None)
                 chunk = min(remaining, 60)
                 time.sleep(chunk)
                 remaining -= chunk
@@ -186,6 +210,9 @@ def run_scheduler_mode(config: BotConfig):
     
     try:
         while True:
+            # Prüfe ob Pause aktiv ist
+            check_pause_state()
+            
             # Prüfe Nachtpause (1:00 - 6:00 Uhr)
             if is_night_time(start_hour=1, end_hour=6):
                 sleep_seconds, wake_time = calculate_sleep_until_morning(wake_hour=4)
@@ -224,6 +251,7 @@ def run_scheduler_mode(config: BotConfig):
             # Countdown-Schleife
             remaining = wait_seconds
             while remaining > 0:
+                check_pause_state()
                 chunk = min(remaining, 60)
                 time.sleep(chunk)
                 remaining -= chunk

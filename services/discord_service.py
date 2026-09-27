@@ -116,7 +116,9 @@ class DiscordWebhookHandler(logging.Handler):
         "Bot gestartet",
         "Bot gestoppt",
         "SCHEDULER-MODUS",
-        "LIVE-SESSION MODUS"
+        "LIVE-SESSION MODUS",
+        "Bot pausiert",
+        "Pause beendet"
     ]
 
     IGNORED_PATTERNS = [
