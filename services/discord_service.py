@@ -101,12 +101,64 @@ class DiscordWebhookHandler(logging.Handler):
         except Exception:
             pass
 
+    # Filter für wichtige Discord-Benachrichtigungen (kein technischer Browser-Spam)
+    IMPORTANT_INFO_PATTERNS = [
+        "Login erfolgreich",
+        "Login fehlgeschlagen",
+        "gelistet",
+        "Re-List",
+        "Nächster Durchlauf",
+        "NACHTPAUSE",
+        "Guten Morgen",
+        "2FA",
+        "Auf anderem Gerät",
+        "BOT-STATISTIKEN",
+        "Bot gestartet",
+        "Bot gestoppt",
+        "SCHEDULER-MODUS",
+        "LIVE-SESSION MODUS"
+    ]
+
+    IGNORED_PATTERNS = [
+        "Viewport",
+        "Browser initialisiert",
+        "Cookies geladen",
+        "Aktualisiere Seite",
+        "Cookie-Banner",
+        "Warte auf",
+        "Email erfolgreich",
+        "geklickt",
+        "Browser-Identität",
+        "CDP",
+        "Aufräumen",
+        "Session initialisiert",
+        "Session beendet",
+        "Schließe Session",
+        "Öffne EA",
+        "Countdown: Noch"  # Zwischen-Countdowns filtern, nur den Haupttimer nach dem Job senden
+    ]
+
     def emit(self, record: logging.LogRecord):
         if not self.webhook_url or not self.webhook_url.startswith("http"):
             return
-        # Nur relevante Level (INFO und höher)
+            
+        # Nur WARNING, ERROR oder ausgewählte wichtige INFO-Events
         if record.levelno < logging.INFO:
             return
+            
+        msg = record.getMessage().strip()
+        if not msg:
+            return
+            
+        # Wenn nur INFO: Prüfe ob es eine wichtige Statusmeldung ist
+        if record.levelno == logging.INFO:
+            # Technische Details ignorieren
+            if any(p in msg for p in self.IGNORED_PATTERNS):
+                return
+            # Nur senden wenn es ein wichtiges Bot-Event ist
+            if not any(p in msg for p in self.IMPORTANT_INFO_PATTERNS):
+                return
+                
         try:
             self._queue.put_nowait(record)
         except queue.Full:
