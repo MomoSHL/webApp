@@ -1016,55 +1016,76 @@ def find_element_with_fallbacks(driver, selector_list, timeout=15, condition="cl
     return None
 
 
-def check_already_logged_in_elsewhere(driver):
+def check_already_logged_in_elsewhere(driver) -> bool:
     """
-    Prüft ob User bereits auf anderem Gerät (z.B. PlayStation) angemeldet ist.
+    Prüft ob User bereits auf anderem Gerät (z.B. Konsole/PC) angemeldet ist
+    (z.B. 'Signed Into Another Device' Dialog).
+    
     Returns: True wenn "bereits angemeldet" Meldung erscheint
     """
     try:
-        # Suche nach typischen "bereits angemeldet" Meldungen
-        error_texts = [
+        page_text = driver.page_source.lower()
+        
+        # Spezifische Textphrasen des EA 'Signed Into Another Device' Dialogs
+        conflict_patterns = [
+            "signed into another device",
+            "cannot use the fc companion app or web app",
+            "while signed into football ultimate team",
+            "while signed into ultimate team",
+            "sign out from your football ultimate team account",
+            "backing out of the mode to the main fc menu",
+            "shutting off your console or pc while logged into ultimate team",
             "already logged in",
             "bereits angemeldet",
             "logged in on another device",
             "auf einem anderen gerät",
-            "another device",
-            "anderes gerät",
-            "sign out on other device",
             "auf einem anderen gerät angemeldet",
+            "another device",
+            "anderes gerät"
         ]
         
-        page_text = driver.page_source.lower()
-        
-        for error_text in error_texts:
-            if error_text in page_text:
-                logger.warning(f"⚠️ Erkannt: Bereits auf anderem Gerät angemeldet ('{error_text}')")
-                return True
-        
-        # Suche nach spezifischen Error-Containern
-        error_selectors = [
-            "div.ut-error-view",
-            "div.error-message",
-            "div.notification",
-            "//div[contains(@class, 'error')]",
-            "//div[contains(@class, 'notification')]",
-        ]
-        
-        for selector in error_selectors:
-            try:
-                if selector.startswith("//"):
-                    error_elem = driver.find_element(By.XPATH, selector)
-                else:
-                    error_elem = driver.find_element(By.CSS_SELECTOR, selector)
+        detected_pattern = None
+        for pat in conflict_patterns:
+            if pat in page_text:
+                detected_pattern = pat
+                break
                 
-                error_text = error_elem.text.lower()
-                if any(err in error_text for err in ["already", "bereits", "other device", "anderes gerät"]):
-                    logger.warning(f"⚠️ Error-Element gefunden: {error_text[:100]}")
-                    return True
-            except:
-                continue
-        
-        return False
+        if not detected_pattern:
+            return False
+            
+        # Versuche genauen Text aus dem HTML/Dialog zu extrahieren
+        dialog_text = ""
+        try:
+            for sel in [
+                "//h2[contains(., 'Signed Into Another Device') or contains(., 'Another Device') or contains(., 'anderem Gerät')]/..",
+                "//h2[contains(., 'Signed Into Another Device')]/parent::*",
+                "div.ut-error-view",
+                "div.ea-dialog-view",
+                "div.view-modal",
+                "div.error-message"
+            ]:
+                elements = driver.find_elements(By.XPATH if sel.startswith("//") else By.CSS_SELECTOR, sel)
+                for el in elements:
+                    txt = el.text.strip()
+                    if txt and any(p in txt.lower() for p in ["another device", "companion app", "ultimate team", "anderes gerät"]):
+                        dialog_text = txt
+                        break
+                if dialog_text:
+                    break
+        except Exception:
+            pass
+            
+        logger.warning("⚠️ WebApp nicht verfügbar: 'Signed Into Another Device' erkannt!")
+        if dialog_text:
+            for line in dialog_text.splitlines():
+                line = line.strip()
+                if line:
+                    logger.warning(f"   ℹ️ {line}")
+        else:
+            logger.warning("   ℹ️ 'Sorry, you cannot use the FC Companion App or Web App while signed into Football Ultimate Team on your Console or PC.'")
+            logger.warning("   ℹ️ 'Please sign out from your Football Ultimate Team account on your console by backing out of the mode to the main FC Menu.'")
+            
+        return True
         
     except Exception as e:
         logger.debug(f"🔍 Debug: check_already_logged_in_elsewhere Fehler: {e}")
@@ -1408,6 +1429,18 @@ def login_via_ui(driver, cfg):
     start_wait_hub = time.time()
     while time.time() - start_wait_hub < 40:
         _check_and_accept_cookie_banner(driver)
+        
+        # Prüfe ob nach dem Login 'Signed Into Another Device' erscheint
+        if check_already_logged_in_elsewhere(driver):
+            save_page_diagnostics(driver, "err_device_conflict_post_login")
+            webhook_url = cfg.get('discord_webhook')
+            if webhook_url:
+                try:
+                    send_device_conflict_embed(webhook_url, retry_minutes=15)
+                except Exception:
+                    pass
+            return None
+            
         for sel in [
             "button.ut-tab-bar-item.icon-transfer",
             ".ut-tab-bar-item.icon-transfer",
@@ -1427,15 +1460,24 @@ def login_via_ui(driver, cfg):
             break
         time.sleep(1.0)
         
-    # Cookies speichern
-    save_cookies(driver, username)
-    
     if hub_loaded:
+        save_cookies(driver, username)
         logger.info("✅ Login erfolgreich und Ultimate Team Hub geladen!\n")
         return True
     else:
-        logger.warning("⚠️ WebApp Hub nicht eindeutig erkannt, fahre trotzdem fort...")
-        return True
+        # Nochmalige Konfliktprüfung bei Timeout
+        if check_already_logged_in_elsewhere(driver):
+            save_page_diagnostics(driver, "err_device_conflict_timeout")
+            webhook_url = cfg.get('discord_webhook')
+            if webhook_url:
+                try:
+                    send_device_conflict_embed(webhook_url, retry_minutes=15)
+                except Exception:
+                    pass
+            return None
+            
+        logger.error("❌ WebApp Hub konnte nach Login nicht geladen werden")
+        return False
 
 
 # ============================================================================
@@ -1854,14 +1896,7 @@ def main_job(cfg, reuse_driver=None):
         )
         
         if login_result is None:
-            # Bereits auf anderem Gerät angemeldet
-            print("\n" + "="*60)
-            logger.warning("⚠️ BEREITS AUF ANDEREM GERÄT ANGEMELDET")
-            print("="*60)
-            logger.debug("WebApp ist nicht verfügbar (z.B. PlayStation aktiv)")
-            logger.debug("Warte 15 Minuten und versuche es erneut...")
-            logger.debug("="*60 + "\n")
-            
+            logger.error("❌ Bot-Job fehlgeschlagen: Spieler konnten nicht neu angeboten werden (bereits auf anderem Gerät angemeldet)")
             if created_driver and cfg.get('headless', True):
                 driver.quit()
                 return None, 'already_logged_in'

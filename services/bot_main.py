@@ -272,9 +272,11 @@ class EAFC27Bot:
                 login_success = self.login()
                 if login_success is None:
                     self.session.state.last_status = "already_logged_in"
+                    logger.error("❌ Bot-Job fehlgeschlagen: Spieler konnten nicht neu angeboten werden (bereits auf anderem Gerät angemeldet)")
                     return False, "already_logged_in"
                 elif not login_success:
                     self.session.state.last_status = "login_failed"
+                    logger.error("❌ Bot-Job fehlgeschlagen: Login nicht erfolgreich")
                     return False, "login_failed"
             
             # Re-List
