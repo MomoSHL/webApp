@@ -126,17 +126,6 @@ def run_live_session_mode(config: BotConfig):
             try:
                 success, status = bot.run_job()
                 retry_count = 0  # Reset bei Erfolg
-                
-                # Bei 'already_logged_in': 15 Minuten warten
-                if bot.session and bot.session.state.last_status == 'already_logged_in':
-                    logger.info(f"⏳ Auf anderem Gerät aktiv: Warte {retry_delay // 60} Minuten bis zum nächsten Versuch...")
-                    
-                    if bot.session.driver:
-                        switch_to_idle_tab(bot.session.driver)
-                    
-                    time.sleep(retry_delay)
-                    continue
-                
             except Exception as e:
                 retry_count += 1
                 logger.error(f"❌ Job-Fehler (Versuch {retry_count}/{MAX_RETRIES}): {e}", exc_info=True)
@@ -155,8 +144,7 @@ def run_live_session_mode(config: BotConfig):
                         continue
                     except Exception as restart_error:
                         logger.error(f"❌ Bot-Neustart fehlgeschlagen: {restart_error}")
-                        time.sleep(retry_delay)
-                        continue
+                        pass
                 else:
                     logger.critical(f"💥 Maximale Retry-Versuche ({MAX_RETRIES}) erreicht!")
                     raise
@@ -168,7 +156,10 @@ def run_live_session_mode(config: BotConfig):
             
             wait_minutes = wait_seconds // 60
             next_run = datetime.now() + timedelta(seconds=wait_seconds)
-            logger.info(f"⏳ Job erfolgreich! Nächster Durchlauf in {wait_minutes} Minuten (geplant um {next_run.strftime('%H:%M:%S')} Uhr)")
+            if success:
+                logger.info(f"⏳ Job erfolgreich! Nächster Durchlauf in {wait_minutes} Minuten (geplant um {next_run.strftime('%H:%M:%S')} Uhr)")
+            else:
+                logger.info(f"⏳ Nächster Durchlauf in {wait_minutes} Minuten (geplant um {next_run.strftime('%H:%M:%S')} Uhr)")
             
             # Wechsle zu Idle-Tab während Wartezeit
             if bot.session and bot.session.driver:
@@ -204,8 +195,6 @@ def run_scheduler_mode(config: BotConfig):
     logger.info("   Nachtpause: 1:00 - 6:00 Uhr")
     logger.info("   Drücke Ctrl+C zum Beenden\n")
     
-    retry_delay = 15 * 60  # 15 Minuten
-    
     try:
         while True:
             # Prüfe ob Pause aktiv ist
@@ -229,14 +218,6 @@ def run_scheduler_mode(config: BotConfig):
             # Cleanup
             bot.cleanup()
             
-            # Prüfe ob Session existiert bevor auf state zugegriffen wird
-            if bot.session and hasattr(bot.session, 'state') and bot.session.state:
-                # Bei 'already_logged_in': 15 Minuten warten
-                if bot.session.state.last_status == 'already_logged_in':
-                    logger.info(f"⏳ Auf anderem Gerät aktiv: Warte {retry_delay // 60} Minuten...")
-                    time.sleep(retry_delay)
-                    continue
-            
             # Zufällige Wartezeit: 1h 1min bis 1h 20min
             base_seconds = 3600  # 1 Stunde
             random_extra = random.randint(60, 1200)  # 1-20 Minuten
@@ -244,7 +225,10 @@ def run_scheduler_mode(config: BotConfig):
             
             wait_minutes = wait_seconds // 60
             next_run = datetime.now() + timedelta(seconds=wait_seconds)
-            logger.info(f"⏳ Job abgeschlossen! Nächster Durchlauf in {wait_minutes} Minuten (geplant um {next_run.strftime('%H:%M:%S')} Uhr)")
+            if success:
+                logger.info(f"⏳ Job erfolgreich! Nächster Durchlauf in {wait_minutes} Minuten (geplant um {next_run.strftime('%H:%M:%S')} Uhr)")
+            else:
+                logger.info(f"⏳ Nächster Durchlauf in {wait_minutes} Minuten (geplant um {next_run.strftime('%H:%M:%S')} Uhr)")
             
             # Countdown-Schleife
             remaining = wait_seconds

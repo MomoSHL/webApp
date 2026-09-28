@@ -920,19 +920,19 @@ def save_page_diagnostics(driver, stage_name: str):
         except Exception:
             pass
             
-        logger.info(f"🔍 [DIAGNOSE - {stage_name}]")
-        logger.info(f"   • URL: {cur_url}")
-        logger.info(f"   • Titel: '{cur_title}'")
-        logger.info(f"   • Text-Auszug: {text_preview[:120]}...")
+        logger.debug(f"🔍 [DIAGNOSE - {stage_name}]")
+        logger.debug(f"   • URL: {cur_url}")
+        logger.debug(f"   • Titel: '{cur_title}'")
+        logger.debug(f"   • Text-Auszug: {text_preview[:120]}...")
         if btn_info:
-            logger.info(f"   • Buttons ({len(btn_info)}): {btn_info[:6]}")
+            logger.debug(f"   • Buttons ({len(btn_info)}): {btn_info[:6]}")
         if inp_info:
-            logger.info(f"   • Inputs ({len(inp_info)}): {inp_info[:6]}")
+            logger.debug(f"   • Inputs ({len(inp_info)}): {inp_info[:6]}")
         if console_logs:
-            logger.info(f"   • Browser-Fehler ({len(console_logs)}):")
+            logger.debug(f"   • Browser-Fehler ({len(console_logs)}):")
             for cl in console_logs[:3]:
-                logger.info(f"     ⚠ {cl}")
-        logger.info(f"   • Screenshot: {screenshot_path}")
+                logger.debug(f"     ⚠ {cl}")
+        logger.debug(f"   • Screenshot: {screenshot_path}")
                 
     except Exception as e:
         logger.debug(f"Diagnose-Erfassung fehlgeschlagen: {e}")
@@ -1110,7 +1110,7 @@ def login_via_ui(driver, cfg):
     try:
         cur_plat = driver.execute_script("return navigator.platform;")
         cur_ua = driver.execute_script("return navigator.userAgent;")
-        logger.info(f"   🔍 Browser-Identität: platform='{cur_plat}', UA='{cur_ua[:40]}...'")
+        logger.debug(f"🔍 Browser-Identität: platform='{cur_plat}', UA='{cur_ua[:40]}...'")
     except Exception:
         pass
         
@@ -2097,16 +2097,8 @@ def main():
                     time.sleep(retry_delay)
                     continue
                 
-                if status == 'already_logged_in':
-                    # Warte 15 Minuten
-                    logger.debug(f"⏳ Warte {retry_delay // 60} Minuten bis zum nächsten Versuch...")
-                    
-                    # Wechsle zu Idle-Tab während Wartezeit
-                    if shared_driver:
-                        switch_to_idle_tab(shared_driver)
-                    
-                    time.sleep(retry_delay)
-                    continue
+                if shared_driver and status == 'already_logged_in':
+                    switch_to_idle_tab(shared_driver)
                 
                 # Normale Wartezeit: 1h 1min bis 1h 20min (zufällig)
                 base_seconds = 3600  # 1 Stunde
@@ -2135,8 +2127,6 @@ def main():
     logger.info(f"   Nachtpause: 1:00 - 6:00 Uhr")
     logger.info("   Drücke Ctrl+C zum Beenden\n")
     
-    retry_delay = 15 * 60  # 15 Minuten
-    
     try:
         while True:
             # Prüfe ob Nachtpause (1:00 - 6:00 Uhr)
@@ -2151,12 +2141,6 @@ def main():
                 continue
             
             driver, status = main_job(cfg)
-            
-            if status == 'already_logged_in':
-                # Warte 15 Minuten
-                logger.debug(f"⏳ Warte {retry_delay // 60} Minuten bis zum nächsten Versuch...")
-                time.sleep(retry_delay)
-                continue
             
             # Zufällige Wartezeit: 1h 1min bis 1h 20min
             base_seconds = 3600  # 1 Stunde

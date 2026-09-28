@@ -264,13 +264,12 @@ def send_relist_embed(
         return False
 
 
-def send_device_conflict_embed(webhook_url: str, retry_minutes: int = 15) -> bool:
+def send_device_conflict_embed(webhook_url: str, *args, **kwargs) -> bool:
     """
     Sendet eine Warnmeldung an Discord, wenn Ultimate Team bereits auf einem anderen Gerät aktiv ist.
     
     Args:
         webhook_url: Discord Webhook URL
-        retry_minutes: Wartezeit bis zum nächsten Versuch in Minuten
         
     Returns:
         True wenn erfolgreich gesendet
@@ -285,7 +284,7 @@ def send_device_conflict_embed(webhook_url: str, retry_minutes: int = 15) -> boo
                 "title": "⚠️ WebApp pausiert: Auf anderem Gerät aktiv",
                 "description": (
                     "Ultimate Team läuft aktuell auf einem anderen Gerät (Konsole/PC).\n"
-                    f"Der Bot pausiert für **{retry_minutes} Minuten** und versucht es danach automatisch erneut."
+                    "Der Bot pausiert und versucht es beim nächsten regulären Durchlauf erneut."
                 ),
                 "color": 0xF39C12,  # Orange
                 "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
