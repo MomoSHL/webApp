@@ -715,7 +715,7 @@ def handle_2fa(driver, wait):
         pass
     
     if not two_fa_detected:
-        logger.info("✅ Keine 2FA erforderlich")
+        logger.debug("✅ Keine 2FA erforderlich")
         return True
     
     print("\n" + "="*60)
@@ -1075,15 +1075,15 @@ def check_already_logged_in_elsewhere(driver) -> bool:
         except Exception:
             pass
             
-        logger.warning("⚠️ WebApp nicht verfügbar: 'Signed Into Another Device' erkannt!")
+        logger.debug("⚠️ WebApp nicht verfügbar: 'Signed Into Another Device' erkannt!")
         if dialog_text:
             for line in dialog_text.splitlines():
                 line = line.strip()
                 if line:
-                    logger.warning(f"   ℹ️ {line}")
+                    logger.debug(f"   ℹ️ {line}")
         else:
-            logger.warning("   ℹ️ 'Sorry, you cannot use the FC Companion App or Web App while signed into Football Ultimate Team on your Console or PC.'")
-            logger.warning("   ℹ️ 'Please sign out from your Football Ultimate Team account on your console by backing out of the mode to the main FC Menu.'")
+            logger.debug("   ℹ️ 'Sorry, you cannot use the FC Companion App or Web App while signed into Football Ultimate Team on your Console or PC.'")
+            logger.debug("   ℹ️ 'Please sign out from your Football Ultimate Team account on your console by backing out of the mode to the main FC Menu.'")
             
         return True
         
@@ -1157,14 +1157,7 @@ def login_via_ui(driver, cfg):
         
         # Bereits auf anderem Gerät angemeldet?
         if check_already_logged_in_elsewhere(driver):
-            logger.warning("⚠️ WebApp nicht verfügbar: Bereits auf anderem Gerät angemeldet (Konsole/PC)")
             save_page_diagnostics(driver, "err_device_conflict")
-            webhook_url = cfg.get('discord_webhook')
-            if webhook_url:
-                try:
-                    send_device_conflict_embed(webhook_url, retry_minutes=15)
-                except Exception:
-                    pass
             return None
             
         # Prüfe ob bereits eingeloggt (Transfer Tab oder Navigation sichtbar)
@@ -1179,7 +1172,7 @@ def login_via_ui(driver, cfg):
             try:
                 elems = driver.find_elements(By.CSS_SELECTOR, sel)
                 if elems and any(e.is_displayed() for e in elems):
-                    logger.info("✅ Bereits eingeloggt via Cookies / Session!")
+                    logger.info("✅ Login erfolgreich (via Cookies)")
                     save_cookies(driver, username)
                     save_page_diagnostics(driver, "success_already_logged_in")
                     return True
@@ -1433,12 +1426,6 @@ def login_via_ui(driver, cfg):
         # Prüfe ob nach dem Login 'Signed Into Another Device' erscheint
         if check_already_logged_in_elsewhere(driver):
             save_page_diagnostics(driver, "err_device_conflict_post_login")
-            webhook_url = cfg.get('discord_webhook')
-            if webhook_url:
-                try:
-                    send_device_conflict_embed(webhook_url, retry_minutes=15)
-                except Exception:
-                    pass
             return None
             
         for sel in [
@@ -1468,12 +1455,6 @@ def login_via_ui(driver, cfg):
         # Nochmalige Konfliktprüfung bei Timeout
         if check_already_logged_in_elsewhere(driver):
             save_page_diagnostics(driver, "err_device_conflict_timeout")
-            webhook_url = cfg.get('discord_webhook')
-            if webhook_url:
-                try:
-                    send_device_conflict_embed(webhook_url, retry_minutes=15)
-                except Exception:
-                    pass
             return None
             
         logger.error("❌ WebApp Hub konnte nach Login nicht geladen werden")

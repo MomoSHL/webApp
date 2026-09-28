@@ -22,8 +22,13 @@ class DiscordWebhookHandler(logging.Handler):
     Routine-Aktionen wie einzelne Klicks werden nicht einzeln gesendet, sondern gebündelt.
     """
     
-    # Nur übergeordnete Lifecycle-Events & Pausen über den Logger senden
+    # Nur übergeordnete Lifecycle-Events, Login & Pausen über den Logger senden
     IMPORTANT_INFO_PATTERNS = [
+        "Login erfolgreich",
+        "Bereits eingeloggt",
+        "Login fehlgeschlagen",
+        "Nächster Durchlauf",
+        "Job erfolgreich",
         "NACHTPAUSE",
         "Guten Morgen",
         "Bot pausiert",
@@ -33,10 +38,12 @@ class DiscordWebhookHandler(logging.Handler):
         "SCHEDULER-MODUS",
         "LIVE-SESSION MODUS",
         "TEST-MODUS",
-        "2FA"
+        "2FA-Code benötigt"
     ]
 
     IGNORED_PATTERNS = [
+        "Keine 2FA",
+        "Keine 2FA erforderlich",
         "Viewport",
         "Browser-Identität",
         "CDP",
@@ -53,8 +60,14 @@ class DiscordWebhookHandler(logging.Handler):
         "Re-list",
         "ERFOLGREICH NEU ANGEBOTEN",
         "abgelaufene Spieler auf der Transferliste erkannt",
-        "Nächster Durchlauf",
-        "Job erfolgreich"
+        "'Signed Into Another Device' erkannt",
+        "Signed Into Another Device",
+        "Sorry, you cannot use",
+        "Please sign out",
+        "Shutting off your console",
+        "Retry",
+        "Wechsle zurück zur WebApp",
+        "WebApp lädt..."
     ]
     
     def __init__(self, webhook_url: str, level: int = logging.INFO):
@@ -94,13 +107,15 @@ class DiscordWebhookHandler(logging.Handler):
             return
             
         # Farb- und Icon-Wahl basierend auf Level & Inhalt
-        color = 0x3498DB  # Blau
+        color = 0x3498DB  # Blau (Standard)
         if record.levelno >= logging.ERROR or "❌" in msg or "💥" in msg:
             color = 0xE74C3C  # Rot
         elif record.levelno >= logging.WARNING or "⚠️" in msg:
-            color = 0xF1C40F  # Gelb / Orange
-        elif "✅" in msg:
+            color = 0xF39C12  # Orange
+        elif "✅" in msg or "erfolgreich" in msg.lower():
             color = 0x2ECC71  # Grün
+        elif "⏳" in msg or "nächster" in msg.lower():
+            color = 0x3498DB  # Blau
         elif "😴" in msg or "⏸️" in msg:
             color = 0x9B59B6  # Lila
             

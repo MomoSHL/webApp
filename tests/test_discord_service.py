@@ -28,13 +28,16 @@ class TestDiscordService(unittest.TestCase):
         """Testet welche Log-Nachrichten durchgelassen und welche zur Entlastung von Discord gefiltert werden."""
         handler = DiscordWebhookHandler(webhook_url="", level=logging.INFO)
         
-        # Lifecycle-Events sollten durchgelassen werden
+        # Lifecycle & Status-Events sollten durchgelassen werden
         lifecycle_msgs = [
             "😴 NACHTPAUSE (1:00 - 6:00 Uhr)",
             "☀️ Guten Morgen! Bot setzt Arbeit fort...",
             "⏸️ Bot pausiert",
             "▶️ Pause beendet",
-            "🔐 2FA-Code benötigt"
+            "🔐 2FA-Code benötigt",
+            "✅ Login erfolgreich (12.3s)",
+            "✅ Login erfolgreich (via Cookies)",
+            "⏳ Nächster Durchlauf in 64 Minuten (geplant um 17:05:57 Uhr)"
         ]
         
         for msg in lifecycle_msgs:
@@ -43,12 +46,16 @@ class TestDiscordService(unittest.TestCase):
             msg_lower = msg.lower()
             is_ignored = any(p.lower() in msg_lower for p in handler.IGNORED_PATTERNS)
             is_important = any(p.lower() in msg_lower for p in handler.IMPORTANT_INFO_PATTERNS)
-            self.assertFalse(is_ignored, f"Lifecycle message should not be ignored: {msg}")
-            self.assertTrue(is_important, f"Lifecycle message should be recognized as important: {msg}")
+            self.assertFalse(is_ignored, f"Lifecycle/Status message should not be ignored: {msg}")
+            self.assertTrue(is_important, f"Lifecycle/Status message should be recognized as important: {msg}")
             
-        # Routine-Aktionen & Micro-Klicks sollen NICHT einzeln als Chat-Spam gesendet werden
-        # (diese werden kompakt in Rich Embeds zusammengefasst)
+        # Routine-Aktionen & Detail-Meldungen sollen NICHT einzeln als Chat-Spam gesendet werden
         routine_ignored_msgs = [
+            "✅ Keine 2FA erforderlich",
+            "Signed Into Another Device",
+            "Sorry, you cannot use the FC Companion App or Web App while signed into Football Ultimate Team on your Console or PC.",
+            "Please sign out from your Football Ultimate Team account on your console by backing out of the mode to the main FC Menu, and retry logging into the app.",
+            "Retry",
             "🌐 Öffne EA WebApp...",
             "🍪 32 Cookies geladen",
             "🖱️ Klick auf 'Transfers'-Tab",
