@@ -262,6 +262,7 @@ class BotConfig:
             'mode': self.mode,
             'headless': self.headless,
             'test_mode': self.test_mode,
+            'discord_webhook': self.discord_webhook,
             'schedule': {
                 'type': self.schedule.type,
                 'hours': self.schedule.hours,

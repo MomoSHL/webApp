@@ -1,7 +1,8 @@
 """
 🎮 Discord Webhook Service
 ==========================
-Sendet Bot-Logs, Relist-Erfolge und Status-Updates asynchron an Discord.
+Sendet gebündelte Bot-Status-Updates, Relist-Ergebnisse und Warnungen an Discord.
+Verhindert Nachrichten-Spam durch thematische Gruppierung (z.B. Re-List Embed, Status Embeds).
 """
 
 import json
@@ -17,28 +18,12 @@ from typing import Optional, List, Dict, Any
 
 class DiscordWebhookHandler(logging.Handler):
     """
-    Logging-Handler, der formatierte Log-Einträge via Discord-Webhook sendet.
-    Nutzt eine Queue und einen Background-Worker, um Blockaden im Bot zu vermeiden.
+    Logging-Handler für globale Bot-Events (Warnungen, Fehler, Nachtpause, Pause/Resume).
+    Routine-Aktionen wie einzelne Klicks werden nicht einzeln gesendet, sondern gebündelt.
     """
     
-    # Filter für wichtige Discord-Benachrichtigungen (Aktionen, Starts, Klicks, Fehler, etc.)
+    # Nur übergeordnete Lifecycle-Events & Pausen über den Logger senden
     IMPORTANT_INFO_PATTERNS = [
-        "Starte",
-        "Öffne EA",
-        "Cookies geladen",
-        "Cookies gespeichert",
-        "Klick",
-        "klick",
-        "geklickt",
-        "Bestätigung",
-        "Login erfolgreich",
-        "Login fehlgeschlagen",
-        "Bereits eingeloggt",
-        "Auf anderem Gerät",
-        "bereits angemeldet",
-        "2FA",
-        "Nächster Durchlauf",
-        "Job erfolgreich",
         "NACHTPAUSE",
         "Guten Morgen",
         "Bot pausiert",
@@ -47,7 +32,8 @@ class DiscordWebhookHandler(logging.Handler):
         "Bot gestoppt",
         "SCHEDULER-MODUS",
         "LIVE-SESSION MODUS",
-        "TEST-MODUS"
+        "TEST-MODUS",
+        "2FA"
     ]
 
     IGNORED_PATTERNS = [
@@ -55,11 +41,20 @@ class DiscordWebhookHandler(logging.Handler):
         "Browser-Identität",
         "CDP",
         "Window size",
-        "Warte auf WebApp-Status",
+        "Warte auf",
         "Cookie-Banner",
         "Countdown: Noch",
-        "ERFOLGREICH NEU ANGEBOTEN",  # Wird als Rich Embed separat gesendet
-        "abgelaufene Spieler auf der Transferliste erkannt"  # Wird als Rich Embed separat gesendet
+        "Cookies geladen",
+        "Cookies gespeichert",
+        "Öffne EA WebApp",
+        "Klick auf",
+        "geklickt",
+        "Bestätigung",
+        "Re-list",
+        "ERFOLGREICH NEU ANGEBOTEN",
+        "abgelaufene Spieler auf der Transferliste erkannt",
+        "Nächster Durchlauf",
+        "Job erfolgreich"
     ]
     
     def __init__(self, webhook_url: str, level: int = logging.INFO):
@@ -99,17 +94,15 @@ class DiscordWebhookHandler(logging.Handler):
             return
             
         # Farb- und Icon-Wahl basierend auf Level & Inhalt
-        color = 0x3498DB  # Blau (Standard)
+        color = 0x3498DB  # Blau
         if record.levelno >= logging.ERROR or "❌" in msg or "💥" in msg:
             color = 0xE74C3C  # Rot
         elif record.levelno >= logging.WARNING or "⚠️" in msg:
             color = 0xF1C40F  # Gelb / Orange
-        elif "✅" in msg or "Erfolg" in msg or "gelistet" in msg:
+        elif "✅" in msg:
             color = 0x2ECC71  # Grün
-        elif "⏳" in msg or "Countdown" in msg or "Nächster" in msg:
+        elif "😴" in msg or "⏸️" in msg:
             color = 0x9B59B6  # Lila
-        elif "🌐" in msg or "🍪" in msg or "🖱️" in msg or "🔄" in msg:
-            color = 0x3498DB  # Blau (Aktionen)
             
         timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         
@@ -146,7 +139,17 @@ class DiscordWebhookHandler(logging.Handler):
         if not self.webhook_url or not self.webhook_url.startswith("http"):
             return
             
-        # WARNING, ERROR oder CRITICAL immer senden
+        msg = record.getMessage().strip()
+        if not msg:
+            return
+            
+        msg_lower = msg.lower()
+        
+        # Ignoriere Nachrichten, die bereits über spezialisierte Embeds gesendet werden
+        if any(p.lower() in msg_lower for p in self.IGNORED_PATTERNS):
+            return
+            
+        # WARNING, ERROR oder CRITICAL senden (falls nicht ignoriert)
         if record.levelno >= logging.WARNING:
             try:
                 self._queue.put_nowait(record)
@@ -157,17 +160,7 @@ class DiscordWebhookHandler(logging.Handler):
         if record.levelno < logging.INFO:
             return
             
-        msg = record.getMessage().strip()
-        if not msg:
-            return
-            
-        msg_lower = msg.lower()
-        
-        # Technische Details ignorieren
-        if any(p.lower() in msg_lower for p in self.IGNORED_PATTERNS):
-            return
-            
-        # Wichtige Bot-Events & Aktionen senden
+        # Übergeordnete Lifecycle-Events senden
         if any(p.lower() in msg_lower for p in self.IMPORTANT_INFO_PATTERNS):
             try:
                 self._queue.put_nowait(record)
@@ -191,7 +184,7 @@ def send_relist_embed(
     next_run: Optional[datetime] = None
 ) -> bool:
     """
-    Sendet ein formatiertes Discord-Embed mit den neu angebotenen Spielern.
+    Sendet das zentrale Re-List Zusammenfassungs-Embed an Discord.
     
     Args:
         webhook_url: Discord Webhook URL
@@ -243,6 +236,53 @@ def send_relist_embed(
                 "title": title,
                 "description": desc,
                 "color": 0x2ECC71,  # Grün
+                "fields": fields,
+                "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "footer": {
+                    "text": "EA FC27 Relist Bot"
+                }
+            }
+        ]
+    }
+    
+    try:
+        req_data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            webhook_url,
+            data=req_data,
+            headers={
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) EAFC27Bot/2.0'
+            }
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status in (200, 204)
+    except Exception as e:
+        return False
+
+
+def send_no_items_embed(webhook_url: str, next_run: Optional[datetime] = None) -> bool:
+    """
+    Sendet ein kurzes Embed wenn keine abgelaufenen Spieler vorhanden sind.
+    """
+    if not webhook_url or not webhook_url.startswith("http"):
+        return False
+        
+    fields = []
+    if next_run:
+        fields.append({
+            "name": "Nächster Durchlauf",
+            "value": f"Geplant um {next_run.strftime('%H:%M:%S')} Uhr",
+            "inline": False
+        })
+        
+    payload = {
+        "username": "EA FC27 Bot",
+        "embeds": [
+            {
+                "title": "ℹ️ Transferliste: Keine abgelaufenen Spieler",
+                "description": "Aktuell müssen keine Spieler neu angeboten werden.",
+                "color": 0x3498DB,  # Blau
                 "fields": fields,
                 "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "footer": {

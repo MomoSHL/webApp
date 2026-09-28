@@ -44,7 +44,7 @@ from services.bot_logger import get_logger, log_section, log_success, log_error,
 from services.config_validator import validate_config, ConfigValidationError
 from services.bot_stats import BotStatistics
 from services.player_parser import parse_transfer_list_html
-from services.discord_service import send_relist_embed, send_device_conflict_embed
+from services.discord_service import send_relist_embed, send_device_conflict_embed, send_no_items_embed
 
 # Logger initialisieren
 logger = get_logger(__name__)
@@ -1677,6 +1677,12 @@ def relist_all_transfer_items(driver, cfg):
         if not relist_button:
             if total_players == 0:
                 logger.info("ℹ️ Kein 'Re-list All' Button vorhanden (keine abgelaufenen Items auf der Transferliste)")
+                webhook_url = cfg.get('discord_webhook')
+                if webhook_url:
+                    try:
+                        send_no_items_embed(webhook_url)
+                    except Exception:
+                        pass
                 return 0
             else:
                 logger.warning("⚠️ 'Re-list All' Button konnte nicht gefunden werden!")
@@ -1691,6 +1697,12 @@ def relist_all_transfer_items(driver, cfg):
             )
             if is_disabled:
                 logger.info("ℹ️ 'Re-list All' Button ist deaktiviert (keine abgelaufenen Spieler zum Anbieten)")
+                webhook_url = cfg.get('discord_webhook')
+                if webhook_url:
+                    try:
+                        send_no_items_embed(webhook_url)
+                    except Exception:
+                        pass
                 return 0
         except Exception:
             pass
