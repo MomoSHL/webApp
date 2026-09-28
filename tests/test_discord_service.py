@@ -42,6 +42,8 @@ class TestDiscordService(unittest.TestCase):
         ]
         
         for msg in important_msgs:
+            rec = logging.LogRecord("test", logging.INFO, "path", 1, msg, (), None)
+            handler.emit(rec)
             msg_lower = msg.lower()
             is_ignored = any(p.lower() in msg_lower for p in handler.IGNORED_PATTERNS)
             is_important = any(p.lower() in msg_lower for p in handler.IMPORTANT_INFO_PATTERNS)
@@ -57,6 +59,8 @@ class TestDiscordService(unittest.TestCase):
         ]
         
         for msg in ignored_msgs:
+            rec = logging.LogRecord("test", logging.INFO, "path", 1, msg, (), None)
+            handler.emit(rec)
             msg_lower = msg.lower()
             is_ignored = any(p.lower() in msg_lower for p in handler.IGNORED_PATTERNS)
             self.assertTrue(is_ignored, f"Should be ignored: {msg}")

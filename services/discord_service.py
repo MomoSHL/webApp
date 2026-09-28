@@ -157,6 +157,10 @@ class DiscordWebhookHandler(logging.Handler):
         if record.levelno < logging.INFO:
             return
             
+        msg = record.getMessage().strip()
+        if not msg:
+            return
+            
         msg_lower = msg.lower()
         
         # Technische Details ignorieren
