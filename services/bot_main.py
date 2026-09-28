@@ -167,10 +167,15 @@ class EAFC27Bot:
                 error=None if result else "Login fehlgeschlagen"
             )
             
-            if result:
+            if result is True:
                 logger.info(f"✅ Login erfolgreich ({duration:.1f}s)")
                 return True
+            elif result is None:
+                self.session.state.last_status = "already_logged_in"
+                logger.warning(f"⚠️ WebApp nicht verfügbar: Bereits auf anderem Gerät angemeldet ({duration:.1f}s)")
+                return None
             else:
+                self.session.state.last_status = "login_failed"
                 logger.error(f"❌ Login fehlgeschlagen ({duration:.1f}s)")
                 return False
                 
@@ -250,7 +255,7 @@ class EAFC27Bot:
         Returns:
             (success, status_message)
         """
-        logger.info("🚀 Starte Bot-Job...")
+        logger.info(f"🚀 Starte Bot-Job ({self.config.mode} mode)...")
         
         try:
             # Start Session
@@ -265,7 +270,10 @@ class EAFC27Bot:
             # Login
             if not self.session.state.is_logged_in:
                 login_success = self.login()
-                if not login_success:
+                if login_success is None:
+                    self.session.state.last_status = "already_logged_in"
+                    return False, "already_logged_in"
+                elif not login_success:
                     self.session.state.last_status = "login_failed"
                     return False, "login_failed"
             

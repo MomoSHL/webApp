@@ -103,21 +103,19 @@ def run_live_session_mode(config: BotConfig):
             if is_night_time(start_hour=1, end_hour=6):
                 sleep_seconds, wake_time = calculate_sleep_until_morning(wake_hour=6)
                 sleep_hours = sleep_seconds / 3600
-                logger.debug(f"\n😴 NACHTPAUSE (1:00 - 6:00 Uhr)")
-                logger.debug(f"   Schlafe für {sleep_hours:.1f} Stunden")
-                logger.debug(f"   Aufwachen um: {wake_time.strftime('%H:%M:%S')}")
+                logger.info(f"😴 NACHTPAUSE (1:00 - 6:00 Uhr) - Schlafe für {sleep_hours:.1f} Stunden bis {wake_time.strftime('%H:%M:%S')}")
                 
                 # Wechsle zu Idle-Tab während Nachtpause
                 if bot.session and bot.session.driver:
                     switch_to_idle_tab(bot.session.driver)
                 
                 time.sleep(sleep_seconds)
-                logger.debug("\n☀️ Guten Morgen! Bot startet wieder...\n")
+                logger.info("☀️ Guten Morgen! Bot setzt Arbeit fort...")
                 continue
             
             # Wechsle zurück zur WebApp vor Job
             if bot.session and bot.session.driver:
-                logger.debug("\n🔄 Starte Job...")
+                logger.info("🔄 Wechsle zurück zur WebApp und starte Job...")
                 if not switch_to_webapp_tab(bot.session.driver, config.login_url):
                     logger.error("❌ Konnte nicht zur WebApp wechseln")
                     time.sleep(2)
@@ -131,7 +129,7 @@ def run_live_session_mode(config: BotConfig):
                 
                 # Bei 'already_logged_in': 15 Minuten warten
                 if bot.session and bot.session.state.last_status == 'already_logged_in':
-                    logger.debug(f"⏳ Warte {retry_delay // 60} Minuten bis zum nächsten Versuch...")
+                    logger.info(f"⏳ Auf anderem Gerät aktiv: Warte {retry_delay // 60} Minuten bis zum nächsten Versuch...")
                     
                     if bot.session.driver:
                         switch_to_idle_tab(bot.session.driver)

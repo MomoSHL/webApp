@@ -43,6 +43,8 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from services.bot_logger import get_logger, log_section, log_success, log_error, log_warning, log_info
 from services.config_validator import validate_config, ConfigValidationError
 from services.bot_stats import BotStatistics
+from services.player_parser import parse_transfer_list_html
+from services.discord_service import send_relist_embed, send_device_conflict_embed
 
 # Logger initialisieren
 logger = get_logger(__name__)
@@ -1134,8 +1136,14 @@ def login_via_ui(driver, cfg):
         
         # Bereits auf anderem Gerät angemeldet?
         if check_already_logged_in_elsewhere(driver):
-            logger.warning("⚠️ WebApp nicht verfügbar: Bereits auf anderem Gerät angemeldet")
+            logger.warning("⚠️ WebApp nicht verfügbar: Bereits auf anderem Gerät angemeldet (Konsole/PC)")
             save_page_diagnostics(driver, "err_device_conflict")
+            webhook_url = cfg.get('discord_webhook')
+            if webhook_url:
+                try:
+                    send_device_conflict_embed(webhook_url, retry_minutes=15)
+                except Exception:
+                    pass
             return None
             
         # Prüfe ob bereits eingeloggt (Transfer Tab oder Navigation sichtbar)
@@ -1217,7 +1225,7 @@ def login_via_ui(driver, cfg):
         
     if app_state == "LANDING_LOGIN" and login_btn_elem:
         btn_name = login_btn_elem.text.strip() if login_btn_elem.text else "Login"
-        logger.info(f"🔑 Login-Button auf Startseite gefunden ('{btn_name}'), klicke...")
+        logger.info(f"🔑 Klick auf Login-Button ('{btn_name}')...")
         save_page_diagnostics(driver, "04_landing_button_found")
         human_like_delay(0.5, 1.2)
         try:
@@ -1482,7 +1490,7 @@ def navigate_to_transfer_list(driver, cfg):
         except Exception:
             driver.execute_script("arguments[0].click();", transfer_tab)
             
-        logger.info("✅ Transfer-Tab geöffnet")
+        logger.info("🖱️ Klick auf 'Transfers'-Tab (erfolgreich geöffnet)")
         human_like_delay(1.5, 2.5)
         
         # 3. Transfer-Liste Tile finden und öffnen
@@ -1506,7 +1514,7 @@ def navigate_to_transfer_list(driver, cfg):
         except Exception:
             driver.execute_script("arguments[0].click();", transfer_tile)
             
-        logger.info("✅ Transfer-Liste geöffnet")
+        logger.info("🖱️ Klick auf 'Transfer List'-Kachel (erfolgreich geöffnet)")
         human_like_delay(2, 3)
         
         # Simuliere Tab-Wechsel (manchmal)
@@ -1533,10 +1541,6 @@ def relist_all_transfer_items(driver, cfg):
     selectors = cfg.get('ui_selectors', {})
     wait = WebDriverWait(driver, 10)
     
-    print("\n" + "="*60)
-    logger.info("RE-LIST: Alle Transfer-Spieler neu anbieten")
-    logger.info("="*60 + "\n")
-    
     # 1. Navigiere zur Transfer-Liste
     if not navigate_to_transfer_list(driver, cfg):
         logger.error("❌ Konnte nicht zur Transfer-Liste navigieren")
@@ -1550,42 +1554,29 @@ def relist_all_transfer_items(driver, cfg):
         random_scroll_behavior(driver)
         human_like_delay(1, 1.5)
         
-        # 2. Ermittle Anzahl & Namen abgelaufener Items (informativ, blockiert niemals)
-        item_count = 0
+        # 2. Ermittle Anzahl, Namen & Auktionsdaten abgelaufener Items
+        parsed_data = {'total_count': 0, 'unique_count': 0, 'players': [], 'grouped': []}
         try:
-            # Suche Header wie "Unsold Items (4)" oder "Nicht verkaufte Objekte (4)"
-            headers = driver.find_elements(
-                By.XPATH, 
-                "//header[contains(., 'Unsold') or contains(., 'Nicht verkauft') or contains(., 'Abgelaufen')] | //h2[contains(., 'Unsold') or contains(., 'Nicht verkauft') or contains(., 'Abgelaufen')]"
-            )
-            for h in headers:
-                match = re.search(r'\((\d+)\)', h.text)
-                if match:
-                    item_count = int(match.group(1))
-                    break
-        except Exception:
-            pass
-        
-        player_names = []
-        try:
-            # Versuche Spielernamen aus den Karten zu lesen falls gerendert
-            card_names = driver.find_elements(
-                By.CSS_SELECTOR, 
-                "div.rowContent .name, li.listFUTItem .name, .ut-pinned-list-container .name, div.name"
-            )
-            for cn in card_names:
-                t = cn.text.strip()
-                if t and t not in player_names:
-                    player_names.append(t)
-        except Exception:
-            pass
+            page_html = driver.page_source
+            parsed_data = parse_transfer_list_html(page_html)
+        except Exception as e:
+            logger.debug(f"🔍 Fehler bei Spieler-Extraktion: {e}")
             
-        if player_names:
-            logger.info(f"📋 {len(player_names)} Spieler auf der Transferliste erkannt:")
-            for name in player_names:
-                logger.info(f"   • {name}")
-        elif item_count > 0:
-            logger.info(f"📋 {item_count} abgelaufene Items in der Liste erkannt")
+        total_players = parsed_data['total_count']
+        grouped_players = parsed_data['grouped']
+        
+        if total_players > 0:
+            logger.info(f"📋 {total_players} abgelaufene Spieler auf der Transferliste erkannt ({parsed_data['unique_count']} verschiedene):")
+            for g in grouped_players:
+                logger.info(f"   • {g['count']}x {g['name']} ({g['rating']}, {g['position']})")
+                
+            # Detailliertes Debug-Log für den Server (jeder einzelne Spieler mit Preisen)
+            logger.debug(f"🔍 Detaillierte Spielerübersicht ({total_players} Karten):")
+            for idx, p in enumerate(parsed_data['players'], 1):
+                logger.debug(
+                    f"   [{idx:02d}/{total_players:02d}] {p['name']} (OVR {p['rating']}, {p['position']}) "
+                    f"| Start: {p['start_price']} | Sofortkauf: {p['buy_now_price']} | Gebot: {p['bid_price']} | Status: {p['status']}"
+                )
         else:
             logger.info("📋 Suche nach 'Re-list All' Button...")
             
@@ -1642,7 +1633,7 @@ def relist_all_transfer_items(driver, cfg):
                     
         # Falls kein Button gefunden wurde:
         if not relist_button:
-            if item_count == 0 and not player_names:
+            if total_players == 0:
                 logger.info("ℹ️ Kein 'Re-list All' Button vorhanden (keine abgelaufenen Items auf der Transferliste)")
                 return 0
             else:
@@ -1771,16 +1762,18 @@ def relist_all_transfer_items(driver, cfg):
         logger.info("⏳ Warte auf Abschluss der Re-List Aktion...")
         human_like_delay(3, 5)
         
-        count = len(player_names) if player_names else (item_count if item_count > 0 else 1)
+        count = total_players if total_players > 0 else 1
         
-        print("\n" + "="*60)
         logger.info(f"✅ ERFOLGREICH NEU ANGEBOTEN: {count} Spieler")
-        print("="*60)
-        if player_names:
-            for idx, name in enumerate(player_names, 1):
-                logger.info(f"   {idx}. {name}")
-        print("="*60 + "\n")
         
+        # Sende Discord Rich Embed wenn Webhook konfiguriert
+        webhook_url = cfg.get('discord_webhook')
+        if webhook_url and total_players > 0:
+            try:
+                send_relist_embed(webhook_url, total_players, grouped_players)
+            except Exception as embed_err:
+                logger.debug(f"🔍 Discord-Embed Fehler: {embed_err}")
+                
         return count
         
     except Exception as e:

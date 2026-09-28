@@ -6,6 +6,7 @@ pyyaml>=6.0
 apscheduler>=3.10.0
 setuptools>=65.0.0
 python-dotenv>=1.0.0
+beautifulsoup4>=4.12.0
 
 # Platform-independent (works on Windows, Linux, macOS)
 # Note: Chrome/Chromium browser must be installed separately on Linux
