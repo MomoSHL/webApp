@@ -66,7 +66,8 @@ class TestDiscordService(unittest.TestCase):
             "🔍 Browser-Identität: platform='Win32'",
             "Warte auf WebApp-Status (prüfe Cookies / Login-Button)...",
             "⏳ Countdown: Noch 15 Minuten bis zum nächsten Durchlauf",
-            "📋 37 abgelaufene Spieler auf der Transferliste erkannt (9 verschiedene):"
+            "📋 37 abgelaufene Spieler auf der Transferliste erkannt (9 verschiedene):",
+            "ℹ️ Popout/Info-Dialog geschlossen via 'Continue'"
         ]
         
         for msg in routine_ignored_msgs:

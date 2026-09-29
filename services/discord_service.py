@@ -67,7 +67,8 @@ class DiscordWebhookHandler(logging.Handler):
         "Shutting off your console",
         "Retry",
         "Wechsle zurück zur WebApp",
-        "WebApp lädt..."
+        "WebApp lädt...",
+        "Popout/Info-Dialog"
     ]
     
     def __init__(self, webhook_url: str, level: int = logging.INFO):

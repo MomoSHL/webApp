@@ -32,7 +32,8 @@ from ea_fc27_bot import (
     randomize_viewport,
     simulate_tab_switch,
     human_type,
-    human_click
+    human_click,
+    dismiss_all_popups
 )
 
 # Re-Export
@@ -45,5 +46,6 @@ __all__ = [
     'randomize_viewport',
     'simulate_tab_switch',
     'human_type',
-    'human_click'
+    'human_click',
+    'dismiss_all_popups'
 ]

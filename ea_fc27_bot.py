@@ -715,7 +715,7 @@ def handle_2fa(driver, wait):
         pass
     
     if not two_fa_detected:
-        logger.debug("✅ Keine 2FA erforderlich")
+        logger.info("✅ Keine 2FA erforderlich")
         return True
     
     print("\n" + "="*60)
@@ -988,6 +988,120 @@ def _check_and_accept_cookie_banner(driver) -> bool:
     return False
 
 
+def dismiss_all_popups(driver, max_passes: int = 5) -> int:
+    """
+    Erkennt und schließt automatisch Popouts, Nachrichten-Dialoge, Willkommens-/Saison-Banner,
+    Feature-Walkthroughs, News-Karten und Info-Overlays auf der Startseite/Hub der WebApp.
+    
+    Returns: Anzahl der geschlossenen Popups
+    """
+    total_dismissed = 0
+    from selenium.webdriver.common.keys import Keys
+    
+    # 1. Cookie-Banner prüfen und akzeptieren
+    _check_and_accept_cookie_banner(driver)
+    
+    for pass_num in range(max_passes):
+        # Sicherheits-Check: Bei Gerätekonflikt ('Signed Into Another Device') nicht eingreifen!
+        if check_already_logged_in_elsewhere(driver):
+            break
+            
+        found_and_clicked = False
+        
+        # Selektoren für Popout-Schließen / Bestätigen
+        popup_button_xpaths = [
+            # 1. Spezifische Text-Buttons in Dialogen / Modal-Containern
+            "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view') or contains(@class, 'ut-popup-view') or contains(@class, 'ut-feature-walkthrough-view') or contains(@class, 'ut-notification-view') or contains(@class, 'dialog-body')]//button[contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren') or contains(., 'Next') or contains(., 'Vorwärts') or contains(., 'Got it') or contains(., 'Verstanden') or contains(., 'Claim Later') or contains(., 'Später anfordern') or contains(., 'Später') or contains(., 'Skip') or contains(., 'Überspringen') or contains(., 'I Agree') or contains(., 'Agree') or contains(., 'Accept') or contains(., 'Akzeptieren') or contains(., 'Done') or contains(., 'Fertig') or contains(., 'Close') or contains(., 'Schließen') or normalize-space(text())='OK' or normalize-space(text())='Ok']",
+            
+            # 2. Explizite Schließen-Buttons in Dialogen
+            "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view') or contains(@class, 'ut-popup-view')]//button[contains(@class, 'close-btn') or contains(@class, 'close') or contains(@class, 'dismiss') or contains(@class, 'icon-close')]",
+            
+            # 3. Standard 'Continue', 'Weiter', 'Next' Buttons in WebApp
+            "//button[contains(@class, 'btn-standard') and (contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren') or contains(., 'Next') or normalize-space(text())='OK' or normalize-space(text())='Ok' or contains(., 'Got it') or contains(., 'Verstanden') or contains(., 'Claim Later') or contains(., 'Skip') or contains(., 'Überspringen'))]",
+            
+            # 4. Standard Dialog Close Buttons
+            "button.flat.close-btn",
+            "button.ut-dialog-close-btn",
+            "button.dialog-close-btn",
+            "button.icon-close",
+            "button[aria-label='Close']",
+            "button[aria-label='Schließen']",
+            "button[aria-label='Dismiss']",
+            "button[aria-label='dismiss']"
+        ]
+        
+        for sel in popup_button_xpaths:
+            try:
+                if sel.startswith("//"):
+                    buttons = driver.find_elements(By.XPATH, sel)
+                else:
+                    buttons = driver.find_elements(By.CSS_SELECTOR, sel)
+                    
+                for btn in buttons:
+                    if not btn.is_displayed() or not btn.is_enabled():
+                        continue
+                        
+                    btn_text = btn.text.strip()
+                    btn_text_lower = btn_text.lower()
+                    
+                    # Schließe Re-List Confirmation Dialoge und Gerätekonflikt-Buttons aus!
+                    if any(kw in btn_text_lower for kw in ['re-list', 'erneut anbieten', 'retry', 'wiederholen', 'change', 'ändern', 'transfers', 'abbrechen']):
+                        continue
+                        
+                    # Extrahiere optionalen Titel des Popouts
+                    popup_title = ""
+                    try:
+                        title_elems = driver.find_elements(
+                            By.XPATH, 
+                            "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view')]//h1 | //div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view')]//h2 | //div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view')]//div[contains(@class, 'title')]"
+                        )
+                        for te in title_elems:
+                            if te.is_displayed() and te.text.strip():
+                                popup_title = te.text.strip()
+                                break
+                    except Exception:
+                        pass
+                        
+                    # Klicke Button
+                    clicked = False
+                    try:
+                        btn.click()
+                        clicked = True
+                    except Exception:
+                        try:
+                            driver.execute_script("arguments[0].click();", btn)
+                            clicked = True
+                        except Exception:
+                            pass
+                            
+                    if clicked:
+                        title_info = f" ('{popup_title}')" if popup_title else ""
+                        btn_info = f"'{btn_text}'" if btn_text else "Close-Button"
+                        logger.info(f"ℹ️ Popout/Info-Dialog geschlossen via {btn_info}{title_info}")
+                        total_dismissed += 1
+                        found_and_clicked = True
+                        human_like_delay(0.8, 1.5)
+                        break
+                        
+                if found_and_clicked:
+                    break
+            except Exception:
+                continue
+                
+        # Wenn kein Button geklickt wurde, prüfe ob ein verbleibender Click-Shield existiert
+        if not found_and_clicked:
+            try:
+                shields = driver.find_elements(By.CSS_SELECTOR, ".ut-click-shield")
+                if shields and any(s.is_displayed() for s in shields):
+                    driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+                    time.sleep(0.5)
+            except Exception:
+                pass
+            break
+            
+    return total_dismissed
+
+
 def find_element_with_fallbacks(driver, selector_list, timeout=15, condition="clickable"):
     """
     Findet das erste passende Element aus einer Liste von Selektoren (CSS oder XPath),
@@ -1075,15 +1189,15 @@ def check_already_logged_in_elsewhere(driver) -> bool:
         except Exception:
             pass
             
-        logger.debug("⚠️ WebApp nicht verfügbar: 'Signed Into Another Device' erkannt!")
+        logger.warning("⚠️ WebApp nicht verfügbar: 'Signed Into Another Device' erkannt!")
         if dialog_text:
             for line in dialog_text.splitlines():
                 line = line.strip()
                 if line:
-                    logger.debug(f"   ℹ️ {line}")
+                    logger.warning(f"   ℹ️ {line}")
         else:
-            logger.debug("   ℹ️ 'Sorry, you cannot use the FC Companion App or Web App while signed into Football Ultimate Team on your Console or PC.'")
-            logger.debug("   ℹ️ 'Please sign out from your Football Ultimate Team account on your console by backing out of the mode to the main FC Menu.'")
+            logger.warning("   ℹ️ 'Sorry, you cannot use the FC Companion App or Web App while signed into Football Ultimate Team on your Console or PC.'")
+            logger.warning("   ℹ️ 'Please sign out from your Football Ultimate Team account on your console by backing out of the mode to the main FC Menu.'")
             
         return True
         
@@ -1140,8 +1254,8 @@ def login_via_ui(driver, cfg):
     diagnostics_taken_15s = False
     
     while time.time() - start_time < max_wait:
-        # Cookie Banner prüfen
-        _check_and_accept_cookie_banner(driver)
+        # Cookie Banner & Popouts prüfen und schließen
+        dismiss_all_popups(driver, max_passes=2)
         
         # Periodische Status-Logs
         elapsed = int(time.time() - start_time)
@@ -1175,6 +1289,7 @@ def login_via_ui(driver, cfg):
                     logger.info("✅ Login erfolgreich (via Cookies)")
                     save_cookies(driver, username)
                     save_page_diagnostics(driver, "success_already_logged_in")
+                    dismiss_all_popups(driver)
                     return True
             except Exception:
                 pass
@@ -1421,7 +1536,8 @@ def login_via_ui(driver, cfg):
     hub_loaded = False
     start_wait_hub = time.time()
     while time.time() - start_wait_hub < 40:
-        _check_and_accept_cookie_banner(driver)
+        # Cookie Banner & Popouts prüfen und schließen
+        dismiss_all_popups(driver, max_passes=2)
         
         # Prüfe ob nach dem Login 'Signed Into Another Device' erscheint
         if check_already_logged_in_elsewhere(driver):
@@ -1450,6 +1566,7 @@ def login_via_ui(driver, cfg):
     if hub_loaded:
         save_cookies(driver, username)
         logger.info("✅ Login erfolgreich und Ultimate Team Hub geladen!\n")
+        dismiss_all_popups(driver)
         return True
     else:
         # Nochmalige Konfliktprüfung bei Timeout
@@ -1467,12 +1584,15 @@ def login_via_ui(driver, cfg):
 
 def navigate_to_transfer_list(driver, cfg):
     """
-    Navigiert zur Transfer-Liste.
+    Navigiert zur Transfer-Liste mit robuster Popout-Erkennung.
     Returns: True wenn erfolgreich
     """
     selectors = cfg.get('ui_selectors', {})
     
-    # 1. Prüfe ob wir bereits auf der Transfer-Liste sind
+    # 1. Vorab alle Popouts / News / Dialoge auf der Startseite schließen
+    dismiss_all_popups(driver)
+    
+    # 2. Prüfe ob wir bereits auf der Transfer-Liste sind
     try:
         already_on_list = driver.find_elements(
             By.XPATH, 
@@ -1487,9 +1607,9 @@ def navigate_to_transfer_list(driver, cfg):
     try:
         # Natürliches Verhalten: User schaut sich erst um
         random_scroll_behavior(driver)
-        human_like_delay(1, 2)
+        human_like_delay(0.5, 1.2)
         
-        # 2. Transfer-Tab finden und öffnen
+        # 3. Transfer-Tab finden und öffnen (mit Retry bei Popouts)
         tab_selectors = [
             selectors.get('transfer_tab', 'button.ut-tab-bar-item.icon-transfer'),
             "button.ut-tab-bar-item.icon-transfer",
@@ -1500,23 +1620,38 @@ def navigate_to_transfer_list(driver, cfg):
             "//button[contains(., 'Transfers')]"
         ]
         
-        transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=15, condition="clickable")
+        transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=8, condition="clickable")
+        if not transfer_tab:
+            # Möglicherweise blockiert ein Popout das Anklicken -> Popouts schließen und nochmal versuchen
+            logger.debug("🔍 Transfer-Tab nicht sofort klickbar - prüfe auf blockierende Popouts...")
+            dismiss_all_popups(driver)
+            transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=10, condition="clickable")
+            
         if not transfer_tab:
             logger.error("❌ Transfer-Tab nicht gefunden")
             return False
             
         random_mouse_movements(driver, num_movements=2)
-        human_like_delay(0.5, 1.2)
+        human_like_delay(0.4, 0.8)
         
         try:
             transfer_tab.click()
         except Exception:
-            driver.execute_script("arguments[0].click();", transfer_tab)
+            # Falls regulärer Klick geblockt wird, versuchen wir Popout-Dismissal und JS-Klick
+            dismiss_all_popups(driver)
+            try:
+                driver.execute_script("arguments[0].click();", transfer_tab)
+            except Exception as e:
+                logger.error(f"❌ Klick auf Transfer-Tab fehlgeschlagen: {e}")
+                return False
             
         logger.info("🖱️ Klick auf 'Transfers'-Tab (erfolgreich geöffnet)")
         human_like_delay(1.5, 2.5)
         
-        # 3. Transfer-Liste Tile finden und öffnen
+        # 4. Nach dem Tab-Wechsel erneut auf Popouts auf der Transfers-Seite prüfen
+        dismiss_all_popups(driver)
+        
+        # 5. Transfer-Liste Tile finden und öffnen
         tile_selectors = [
             selectors.get('transfer_tile', '.tile.col-1-2.ut-tile-transfer-list.ut-tile-transfers'),
             ".tile.col-1-2.ut-tile-transfer-list.ut-tile-transfers",
@@ -1526,19 +1661,32 @@ def navigate_to_transfer_list(driver, cfg):
             "//div[contains(@class, 'tile') and (contains(., 'Transfer List') or contains(., 'Transferliste'))]"
         ]
         
-        transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=15, condition="clickable")
+        transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=8, condition="clickable")
+        if not transfer_tile:
+            # Falls blockiert, Popouts schließen und nochmal suchen
+            dismiss_all_popups(driver)
+            transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=10, condition="clickable")
+            
         if not transfer_tile:
             logger.error("❌ Transfer-Liste Tile nicht gefunden")
             return False
             
-        human_like_delay(0.5, 1.0)
+        human_like_delay(0.4, 0.8)
         try:
             transfer_tile.click()
         except Exception:
-            driver.execute_script("arguments[0].click();", transfer_tile)
+            dismiss_all_popups(driver)
+            try:
+                driver.execute_script("arguments[0].click();", transfer_tile)
+            except Exception as e:
+                logger.error(f"❌ Klick auf Transfer-Tile fehlgeschlagen: {e}")
+                return False
             
         logger.info("🖱️ Klick auf 'Transfer List'-Kachel (erfolgreich geöffnet)")
         human_like_delay(2, 3)
+        
+        # 6. Nach Laden der Transfer-Liste erneut Popouts schließen falls vorhanden
+        dismiss_all_popups(driver)
         
         # Simuliere Tab-Wechsel (manchmal)
         simulate_tab_switch(driver)

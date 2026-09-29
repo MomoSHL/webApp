@@ -59,6 +59,37 @@ class TestBotConfigAndLogger(unittest.TestCase):
         driver = MockDriver()
         self.assertTrue(check_already_logged_in_elsewhere(driver))
 
+    def test_dismiss_all_popups(self):
+        """Testet automatisches Erkennen und Schließen von News/Info-Popouts."""
+        from ea_fc27_bot import dismiss_all_popups
+        
+        class MockElement:
+            def __init__(self, text="Continue"):
+                self.text = text
+                self.clicked = False
+            def is_displayed(self):
+                return True
+            def is_enabled(self):
+                return True
+            def click(self):
+                self.clicked = True
+                
+        btn = MockElement("Continue")
+        
+        class MockDriver:
+            page_source = '<div><h2>What is New in Ultimate Team</h2></div>'
+            def find_elements(self, by, value):
+                if "Continue" in value or "btn-standard" in value:
+                    return [btn]
+                return []
+            def execute_script(self, script, *args):
+                pass
+                
+        driver = MockDriver()
+        count = dismiss_all_popups(driver, max_passes=1)
+        self.assertEqual(count, 1)
+        self.assertTrue(btn.clicked)
+
 
 if __name__ == '__main__':
     unittest.main()

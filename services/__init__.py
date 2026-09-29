@@ -16,7 +16,7 @@ def __getattr__(name):
     if name in (
         'human_like_delay', 'is_night_time', 'calculate_sleep_until_morning',
         'random_mouse_movements', 'random_scroll_behavior', 'randomize_viewport',
-        'simulate_tab_switch', 'human_type', 'human_click'
+        'simulate_tab_switch', 'human_type', 'human_click', 'dismiss_all_popups'
     ):
         from . import bot_helpers
         return getattr(bot_helpers, name)
@@ -68,6 +68,7 @@ __all__ = [
     'simulate_tab_switch',
     'human_type',
     'human_click',
+    'dismiss_all_popups',
     
     # Browser Utils
     'init_browser',
