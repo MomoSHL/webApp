@@ -1010,16 +1010,22 @@ def dismiss_all_popups(driver, max_passes: int = 5) -> int:
         
         # Selektoren für Popout-Schließen / Bestätigen
         popup_button_xpaths = [
-            # 1. Spezifische Text-Buttons in Dialogen / Modal-Containern
-            "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view') or contains(@class, 'ut-popup-view') or contains(@class, 'ut-feature-walkthrough-view') or contains(@class, 'ut-notification-view') or contains(@class, 'dialog-body')]//button[contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren') or contains(., 'Next') or contains(., 'Vorwärts') or contains(., 'Got it') or contains(., 'Verstanden') or contains(., 'Claim Later') or contains(., 'Später anfordern') or contains(., 'Später') or contains(., 'Skip') or contains(., 'Überspringen') or contains(., 'I Agree') or contains(., 'Agree') or contains(., 'Accept') or contains(., 'Akzeptieren') or contains(., 'Done') or contains(., 'Fertig') or contains(., 'Close') or contains(., 'Schließen') or normalize-space(text())='OK' or normalize-space(text())='Ok']",
+            # 1. Spezifische Text-Buttons in Livemessages, Dialogen & Modal-Containern
+            "//div[contains(@class, 'ut-livemessage') or contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view') or contains(@class, 'ut-popup-view') or contains(@class, 'ut-feature-walkthrough-view') or contains(@class, 'ut-notification-view') or contains(@class, 'dialog-body') or contains(@class, 'ut-livemessage-footer')]//button[contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren') or contains(., 'Next') or contains(., 'Vorwärts') or contains(., 'Got it') or contains(., 'Verstanden') or contains(., 'Claim Later') or contains(., 'Später anfordern') or contains(., 'Später') or contains(., 'Skip') or contains(., 'Überspringen') or contains(., 'I Agree') or contains(., 'Agree') or contains(., 'Accept') or contains(., 'Akzeptieren') or contains(., 'Done') or contains(., 'Fertig') or contains(., 'Close') or contains(., 'Schließen') or normalize-space(text())='OK' or normalize-space(text())='Ok']",
             
-            # 2. Explizite Schließen-Buttons in Dialogen
+            # 2. Explizite Buttons in ut-livemessage-footer (z.B. Continue, Check it Out)
+            "//div[contains(@class, 'ut-livemessage')]//button[contains(@class, 'btn-standard') and (contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren'))]",
+            "div.ut-livemessage button.btn-standard.primary",
+            "div.ut-livemessage-footer button.btn-standard.primary",
+            "div.ut-livemessage-footer button",
+            
+            # 3. Explizite Schließen-Buttons in Dialogen
             "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view') or contains(@class, 'ut-popup-view')]//button[contains(@class, 'close-btn') or contains(@class, 'close') or contains(@class, 'dismiss') or contains(@class, 'icon-close')]",
             
-            # 3. Standard 'Continue', 'Weiter', 'Next' Buttons in WebApp
+            # 4. Standard 'Continue', 'Weiter', 'Next' Buttons in WebApp
             "//button[contains(@class, 'btn-standard') and (contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren') or contains(., 'Next') or normalize-space(text())='OK' or normalize-space(text())='Ok' or contains(., 'Got it') or contains(., 'Verstanden') or contains(., 'Claim Later') or contains(., 'Skip') or contains(., 'Überspringen'))]",
             
-            # 4. Standard Dialog Close Buttons
+            # 5. Standard Dialog Close Buttons
             "button.flat.close-btn",
             "button.ut-dialog-close-btn",
             "button.dialog-close-btn",
@@ -1053,7 +1059,7 @@ def dismiss_all_popups(driver, max_passes: int = 5) -> int:
                     try:
                         title_elems = driver.find_elements(
                             By.XPATH, 
-                            "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view')]//h1 | //div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view')]//h2 | //div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view')]//div[contains(@class, 'title')]"
+                            "//div[contains(@class, 'ut-livemessage') or contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view')]//h1 | //div[contains(@class, 'ut-livemessage') or contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view')]//h2 | //div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view')]//div[contains(@class, 'title')]"
                         )
                         for te in title_elems:
                             if te.is_displayed() and te.text.strip():

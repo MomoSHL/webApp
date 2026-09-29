@@ -90,6 +90,49 @@ class TestBotConfigAndLogger(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertTrue(btn.clicked)
 
+    def test_dismiss_livemessage_popup(self):
+        """Testet das Schließen der spezifischen EA 'MESSAGE FROM THE FC TEAM' Livemessage Popout."""
+        from ea_fc27_bot import dismiss_all_popups
+        
+        class MockBtn:
+            def __init__(self, text, displayed=True):
+                self.text = text
+                self._displayed = displayed
+                self.clicked = False
+            def is_displayed(self):
+                return self._displayed
+            def is_enabled(self):
+                return True
+            def click(self):
+                self.clicked = True
+                
+        check_out_btn = MockBtn("Check it Out", displayed=False)
+        continue_btn = MockBtn("Continue", displayed=True)
+        
+        class MockDriver:
+            page_source = (
+                '<div class="ut-livemessage" style="width: 800px; max-width: 90%;">'
+                '<header class="ut-livemessage-header">'
+                '<h1>MESSAGE FROM THE FC TEAM</h1><h2>PLAY EA SPORTS FC™ 27 NOW</h2>'
+                '</header>'
+                '<div class="ut-livemessage-footer">'
+                '<button class="btn-standard primary" style="display: none;">Check it Out</button>'
+                '<button class="btn-standard primary">Continue</button>'
+                '</div></div>'
+            )
+            def find_elements(self, by, value):
+                if "ut-livemessage" in value or "Continue" in value or "btn-standard" in value:
+                    return [check_out_btn, continue_btn]
+                return []
+            def execute_script(self, script, *args):
+                pass
+                
+        driver = MockDriver()
+        count = dismiss_all_popups(driver, max_passes=1)
+        self.assertEqual(count, 1)
+        self.assertFalse(check_out_btn.clicked)
+        self.assertTrue(continue_btn.clicked)
+
 
 if __name__ == '__main__':
     unittest.main()
