@@ -133,6 +133,31 @@ class TestBotConfigAndLogger(unittest.TestCase):
         self.assertFalse(check_out_btn.clicked)
         self.assertTrue(continue_btn.clicked)
 
+    def test_transfer_list_view_detection(self):
+        """Testet die Erkennung der Transfer-Listen-Ansicht."""
+        from ea_fc27_bot import _is_on_transfer_list_view
+        
+        class MockElement:
+            def is_displayed(self):
+                return True
+                
+        class MockDriver:
+            def __init__(self, match_xpath=True):
+                self.match_xpath = match_xpath
+                
+            def find_elements(self, by, value):
+                if self.match_xpath and "ut-sectioned-item-list-view" in value:
+                    return [MockElement()]
+                return []
+                
+        # Fall 1: Element vorhanden
+        driver_on_list = MockDriver(match_xpath=True)
+        self.assertTrue(_is_on_transfer_list_view(driver_on_list))
+        
+        # Fall 2: Element nicht vorhanden
+        driver_not_on_list = MockDriver(match_xpath=False)
+        self.assertFalse(_is_on_transfer_list_view(driver_not_on_list))
+
 
 if __name__ == '__main__':
     unittest.main()

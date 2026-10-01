@@ -66,6 +66,13 @@ def init_browser(config: Union[Dict, 'BotConfig'], user_agent: str = None) -> We
     options.add_argument('--ignore-gpu-blocklist')
     options.add_argument('--enable-webgl')
     options.add_argument('--enable-accelerated-2d-canvas')
+
+    # Anti-Throttling (verhindert Einschlafen im Hintergrund/Xvfb)
+    options.add_argument('--disable-background-timer-throttling')
+    options.add_argument('--disable-backgrounding-occluded-windows')
+    options.add_argument('--disable-renderer-backgrounding')
+    options.add_argument('--disable-features=CalculateNativeWinOcclusion')
+    options.add_argument('--window-size=1920,1080')
     
     # NEU: Custom Chrome Binary (falls gesetzt)
     chrome_binary = None

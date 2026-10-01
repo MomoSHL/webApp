@@ -272,7 +272,15 @@ def switch_to_webapp_tab(driver, webapp_url):
                 if "ea.com" in current_url or "fut" in current_url.lower():
                     webapp_handle = handle
                     logger.debug("   📱 Zurück zum WebApp-Tab")
-                    time.sleep(random.uniform(0.5, 1.0))
+                    try:
+                        driver.execute_script("""
+                            window.focus();
+                            document.dispatchEvent(new Event('focus'));
+                            document.dispatchEvent(new Event('visibilitychange'));
+                        """)
+                    except Exception:
+                        pass
+                    time.sleep(random.uniform(1.0, 1.8))
                     return True
             except Exception as e:
                 # Handle könnte geschlossen worden sein
@@ -663,6 +671,13 @@ def init_browser(headless: bool = True) -> uc.Chrome:
     options.add_argument("--ignore-gpu-blocklist")
     options.add_argument("--enable-webgl")
     options.add_argument("--enable-accelerated-2d-canvas")
+    
+    # Anti-Throttling (verhindert Einschlafen im Hintergrund/Xvfb)
+    options.add_argument("--disable-background-timer-throttling")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--disable-renderer-backgrounding")
+    options.add_argument("--disable-features=CalculateNativeWinOcclusion")
+    options.add_argument("--window-size=1920,1080")
     
     # Plattform-spezifischer User-Agent (immer Windows für EA Kompatibilität)
     user_agent = get_platform_user_agent()
@@ -1588,76 +1603,48 @@ def login_via_ui(driver, cfg):
 # TRANSFER LIST NAVIGATION
 # ============================================================================
 
+def _is_on_transfer_list_view(driver) -> bool:
+    """Prüft ob der Browser sich aktuell in der Transfer-Listen-Ansicht befindet."""
+    tl_signatures = [
+        "//div[contains(@class, 'ut-sectioned-item-list-view')]",
+        "//section[contains(@class, 'ut-sectioned-item-list-view')]",
+        "//div[contains(@class, 'ut-pinned-list-container')]",
+        "//div[contains(@class, 'ut-item-list-view')]",
+        "//ul[contains(@class, 'itemList')]",
+        "//button[contains(@class, 'section-header-btn') and (contains(., 'Re-list') or contains(., 're-list') or contains(., 'Erneut') or contains(., 'neu') or contains(., 'Clear') or contains(., 'löschen'))]",
+        "//button[contains(@class, 'ut-navigation-button-control') or contains(@class, 'ut-navigation-bar-back-button')]"
+    ]
+    for xpath in tl_signatures:
+        try:
+            elems = driver.find_elements(By.XPATH, xpath)
+            if elems and any(e.is_displayed() for e in elems):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def navigate_to_transfer_list(driver, cfg):
     """
-    Navigiert zur Transfer-Liste mit robuster Popout-Erkennung.
-    Returns: True wenn erfolgreich
+    Navigiert zur Transfer-Liste mit robuster Verifikation und Popout-Erkennung.
+    Returns: True wenn erfolgreich auf Transfer-Liste angelangt
     """
     selectors = cfg.get('ui_selectors', {})
     
-    # 1. Vorab alle Popouts / News / Dialoge auf der Startseite schließen
+    # 1. Vorab alle Popouts / News / Dialoge schließen
     dismiss_all_popups(driver)
     
     # 2. Prüfe ob wir bereits auf der Transfer-Liste sind
-    try:
-        already_on_list = driver.find_elements(
-            By.XPATH, 
-            "//button[contains(@class, 'section-header-btn') and (contains(., 'Re-list') or contains(., 're-list') or contains(., 'Erneut') or contains(., 'neu'))] | //button[contains(., 'Re-list All')]"
-        )
-        if already_on_list and any(b.is_displayed() for b in already_on_list):
-            logger.info("✅ Bereits auf der Transfer-Liste (Re-List Button sichtbar)")
-            return True
-    except Exception:
-        pass
+    if _is_on_transfer_list_view(driver):
+        logger.info("✅ Bereits auf der Transfer-Liste (View aktiv)")
+        return True
 
     try:
         # Natürliches Verhalten: User schaut sich erst um
         random_scroll_behavior(driver)
-        human_like_delay(0.5, 1.2)
+        human_like_delay(0.5, 1.0)
         
-        # 3. Transfer-Tab finden und öffnen (mit Retry bei Popouts)
-        tab_selectors = [
-            selectors.get('transfer_tab', 'button.ut-tab-bar-item.icon-transfer'),
-            "button.ut-tab-bar-item.icon-transfer",
-            "button.icon-transfer",
-            ".ut-tab-bar-item.icon-transfer",
-            "//button[contains(@class, 'icon-transfer')]",
-            "//button[contains(@class, 'ut-tab-bar-item') and contains(., 'Transfers')]",
-            "//button[contains(., 'Transfers')]"
-        ]
-        
-        transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=8, condition="clickable")
-        if not transfer_tab:
-            # Möglicherweise blockiert ein Popout das Anklicken -> Popouts schließen und nochmal versuchen
-            logger.debug("🔍 Transfer-Tab nicht sofort klickbar - prüfe auf blockierende Popouts...")
-            dismiss_all_popups(driver)
-            transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=10, condition="clickable")
-            
-        if not transfer_tab:
-            logger.error("❌ Transfer-Tab nicht gefunden")
-            return False
-            
-        random_mouse_movements(driver, num_movements=2)
-        human_like_delay(0.4, 0.8)
-        
-        try:
-            transfer_tab.click()
-        except Exception:
-            # Falls regulärer Klick geblockt wird, versuchen wir Popout-Dismissal und JS-Klick
-            dismiss_all_popups(driver)
-            try:
-                driver.execute_script("arguments[0].click();", transfer_tab)
-            except Exception as e:
-                logger.error(f"❌ Klick auf Transfer-Tab fehlgeschlagen: {e}")
-                return False
-            
-        logger.info("🖱️ Klick auf 'Transfers'-Tab (erfolgreich geöffnet)")
-        human_like_delay(1.5, 2.5)
-        
-        # 4. Nach dem Tab-Wechsel erneut auf Popouts auf der Transfers-Seite prüfen
-        dismiss_all_popups(driver)
-        
-        # 5. Transfer-Liste Tile finden und öffnen
+        # 3. Transfer-Tile Selektoren definieren
         tile_selectors = [
             selectors.get('transfer_tile', '.tile.col-1-2.ut-tile-transfer-list.ut-tile-transfers'),
             ".tile.col-1-2.ut-tile-transfer-list.ut-tile-transfers",
@@ -1667,40 +1654,136 @@ def navigate_to_transfer_list(driver, cfg):
             "//div[contains(@class, 'tile') and (contains(., 'Transfer List') or contains(., 'Transferliste'))]"
         ]
         
-        transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=8, condition="clickable")
+        # Prüfe ob Transfer-Tile bereits sichtbar ist (wir sind schon im Transfers-Tab)
+        transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=3, condition="visible")
+        
+        # Falls nicht sichtbar, klicke Transfers-Tab in der Navigationsleiste
         if not transfer_tile:
-            # Falls blockiert, Popouts schließen und nochmal suchen
-            dismiss_all_popups(driver)
-            transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=10, condition="clickable")
+            tab_selectors = [
+                selectors.get('transfer_tab', 'button.ut-tab-bar-item.icon-transfer'),
+                "button.ut-tab-bar-item.icon-transfer",
+                "button.icon-transfer",
+                ".ut-tab-bar-item.icon-transfer",
+                "//button[contains(@class, 'icon-transfer')]",
+                "//button[contains(@class, 'ut-tab-bar-item') and contains(., 'Transfers')]",
+                "//button[contains(., 'Transfers')]"
+            ]
             
+            transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=8, condition="clickable")
+            if not transfer_tab:
+                dismiss_all_popups(driver)
+                transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=8, condition="clickable")
+                
+            if not transfer_tab:
+                logger.error("❌ Transfer-Tab nicht gefunden")
+                save_page_diagnostics(driver, "err_transfer_tab_not_found")
+                return False
+                
+            random_mouse_movements(driver, num_movements=2)
+            human_like_delay(0.3, 0.6)
+            
+            try:
+                transfer_tab.click()
+            except Exception:
+                dismiss_all_popups(driver)
+                try:
+                    driver.execute_script("arguments[0].click();", transfer_tab)
+                except Exception as e:
+                    logger.error(f"❌ Klick auf Transfer-Tab fehlgeschlagen: {e}")
+                    return False
+                
+            logger.info("🖱️ Klick auf 'Transfers'-Tab (erfolgreich geöffnet)")
+            human_like_delay(1.5, 2.5)
+            dismiss_all_popups(driver)
+            
+            # Jetzt Transfer-Tile auf der Transfers-Hub-Seite suchen
+            transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=8, condition="visible")
+            if not transfer_tile:
+                dismiss_all_popups(driver)
+                transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=6, condition="visible")
+        
         if not transfer_tile:
+            # Prüfe ob wir vielleicht schon direkt auf der Transfer-Liste sind
+            if _is_on_transfer_list_view(driver):
+                logger.info("✅ Bereits auf der Transfer-Liste")
+                return True
             logger.error("❌ Transfer-Liste Tile nicht gefunden")
+            save_page_diagnostics(driver, "err_transfer_tile_not_found")
             return False
             
         human_like_delay(0.4, 0.8)
+        
+        # 4. Klicke Transfer-Liste Kachel mit Multi-Strategie
+        logger.info("🖱️ Öffne 'Transfer List'-Kachel...")
         try:
-            transfer_tile.click()
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'center', behavior: 'smooth'});", transfer_tile)
+            time.sleep(0.3)
         except Exception:
-            dismiss_all_popups(driver)
-            try:
-                driver.execute_script("arguments[0].click();", transfer_tile)
-            except Exception as e:
-                logger.error(f"❌ Klick auf Transfer-Tile fehlgeschlagen: {e}")
-                return False
+            pass
             
-        logger.info("🖱️ Klick auf 'Transfer List'-Kachel (erfolgreich geöffnet)")
-        human_like_delay(2, 3)
+        tile_clicked = False
+        try:
+            tile_clicked = human_click(driver, transfer_tile, method="move")
+        except Exception:
+            pass
+            
+        if not tile_clicked:
+            try:
+                transfer_tile.click()
+                tile_clicked = True
+            except Exception:
+                pass
+                
+        if not tile_clicked:
+            try:
+                driver.execute_script("""
+                    arguments[0].dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+                    arguments[0].click();
+                """, transfer_tile)
+                tile_clicked = True
+            except Exception:
+                pass
+                
+        # 5. Verifikations-Schleife: Warten bis Transfer-Liste tatsächlich geladen ist
+        start_wait = time.time()
+        max_verify_time = 12.0
+        verified = False
         
-        # 6. Nach Laden der Transfer-Liste erneut Popouts schließen falls vorhanden
+        while time.time() - start_wait < max_verify_time:
+            if _is_on_transfer_list_view(driver):
+                verified = True
+                break
+                
+            dismiss_all_popups(driver)
+            
+            # Nach 4 Sekunden erneut versuchen zu klicken falls wir noch auf Hub feststecken
+            elapsed = time.time() - start_wait
+            if elapsed > 4.0:
+                try:
+                    tile_retry = find_element_with_fallbacks(driver, tile_selectors, timeout=1, condition="present")
+                    if tile_retry and tile_retry.is_displayed():
+                        driver.execute_script("""
+                            arguments[0].dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+                            arguments[0].click();
+                        """, tile_retry)
+                except Exception:
+                    pass
+                    
+            time.sleep(0.6)
+            
+        if not verified:
+            logger.error("❌ Transfer-Listen-Ansicht konnte nicht geladen werden (Timeout)")
+            save_page_diagnostics(driver, "err_transfer_list_load_timeout")
+            return False
+            
+        logger.info("🖱️ 'Transfer List' erfolgreich geöffnet (View aktiv)")
+        human_like_delay(1.0, 2.0)
         dismiss_all_popups(driver)
-        
-        # Simuliere Tab-Wechsel (manchmal)
-        simulate_tab_switch(driver)
-        
         return True
         
     except Exception as e:
         logger.error(f"❌ Transfer-Navigation fehlgeschlagen: {e}")
+        save_page_diagnostics(driver, "err_transfer_nav_exception")
         return False
 
 
@@ -1716,7 +1799,6 @@ def relist_all_transfer_items(driver, cfg):
     Returns: Anzahl der neu angebotenen Spieler (>0 bei Erfolg, 0 wenn keine Items, -1 bei Fehler)
     """
     selectors = cfg.get('ui_selectors', {})
-    wait = WebDriverWait(driver, 10)
     
     # 1. Navigiere zur Transfer-Liste
     if not navigate_to_transfer_list(driver, cfg):
@@ -1724,20 +1806,85 @@ def relist_all_transfer_items(driver, cfg):
         return -1
     
     try:
-        # Warte kurz bis Items & Header geladen sind
-        human_like_delay(2, 3)
-        
         # Natürliches Verhalten: Leichter Scroll
         random_scroll_behavior(driver)
-        human_like_delay(1, 1.5)
+        human_like_delay(0.5, 1.0)
         
-        # 2. Ermittle Anzahl, Namen & Auktionsdaten abgelaufener Items
+        # 2. Dynamische Warterunde für asynchrones Laden der Tradepile & Buttons
+        # EA WebApp lädt tradepile Items per AJAX (/ut/game/fc27/tradepile).
+        # Auf Ubuntu / Remote-Servern kann das 3-8 Sekunden dauern.
+        logger.info("⏳ Lade Transferliste & prüfe abgelaufene Karten...")
+        
+        relist_xpaths = [
+            "//button[contains(@class, 'section-header-btn') and (contains(., 'Re-list') or contains(., 're-list') or contains(., 'Erneut') or contains(., 'neu anbieten'))]",
+            "//button[contains(., 'Re-list All') or contains(., 're-list all') or contains(., 'RE-LIST ALL')]",
+            "//button[contains(., 'Erneut anbieten') or contains(., 'neu anbieten') or contains(., 'Neu anbieten')]",
+            "//button[contains(@class, 'section-header-btn') and contains(@class, 'primary')]",
+        ]
+        relist_css = [
+            "button.btn-standard.section-header-btn.mini.primary",
+            "button.section-header-btn.mini.primary",
+            "button.btn-standard.section-header-btn",
+            "button.section-header-btn.primary",
+            "button.section-header-btn",
+        ]
+        
+        start_poll = time.time()
+        max_poll_time = 15.0
         parsed_data = {'total_count': 0, 'unique_count': 0, 'players': [], 'grouped': []}
-        try:
-            page_html = driver.page_source
-            parsed_data = parse_transfer_list_html(page_html)
-        except Exception as e:
-            logger.debug(f"🔍 Fehler bei Spieler-Extraktion: {e}")
+        relist_button = None
+        
+        while time.time() - start_poll < max_poll_time:
+            dismiss_all_popups(driver)
+            
+            # Extrahiere Spielerdaten aus aktuellem DOM
+            try:
+                page_html = driver.page_source
+                parsed_data = parse_transfer_list_html(page_html)
+            except Exception as e:
+                logger.debug(f"🔍 Fehler bei Spieler-Extraktion: {e}")
+                
+            # Suche nach Relist-Button
+            found_btn = None
+            for xpath in relist_xpaths:
+                try:
+                    candidates = driver.find_elements(By.XPATH, xpath)
+                    for btn in candidates:
+                        btn_text = btn.text.strip().lower()
+                        if 'clear' in btn_text or 'löschen' in btn_text:
+                            continue
+                        if btn.is_displayed() or btn.is_enabled():
+                            found_btn = btn
+                            break
+                    if found_btn:
+                        break
+                except Exception:
+                    continue
+                    
+            if not found_btn:
+                for css in relist_css:
+                    try:
+                        candidates = driver.find_elements(By.CSS_SELECTOR, css)
+                        for btn in candidates:
+                            btn_text = btn.text.strip().lower()
+                            if 'clear' in btn_text or 'löschen' in btn_text:
+                                continue
+                            if btn.is_displayed() or btn.is_enabled():
+                                found_btn = btn
+                                break
+                        if found_btn:
+                            break
+                    except Exception:
+                        continue
+                        
+            if found_btn:
+                relist_button = found_btn
+                
+            # Wenn Spieler gefunden wurden oder Relist-Button da ist, sind die Daten geladen
+            if parsed_data['total_count'] > 0 or relist_button:
+                break
+                
+            time.sleep(0.8)
             
         total_players = parsed_data['total_count']
         grouped_players = parsed_data['grouped']
@@ -1757,61 +1904,11 @@ def relist_all_transfer_items(driver, cfg):
         else:
             logger.info("📋 Suche nach 'Re-list All' Button...")
             
-        # 3. Finde den "Re-list All" Button
-        # Vom User bereitgestelltes HTML: <button class="btn-standard section-header-btn mini primary hover" style="">Re-list All</button>
-        relist_button = None
-        
-        # Strategie A: Spezifische Text- & Klassen-XPaths
-        relist_xpaths = [
-            "//button[contains(@class, 'section-header-btn') and (contains(., 'Re-list') or contains(., 're-list') or contains(., 'Erneut') or contains(., 'neu anbieten'))]",
-            "//button[contains(., 'Re-list All') or contains(., 're-list all') or contains(., 'RE-LIST ALL')]",
-            "//button[contains(., 'Erneut anbieten') or contains(., 'neu anbieten') or contains(., 'Neu anbieten')]",
-            "//button[contains(@class, 'section-header-btn') and contains(@class, 'primary')]",
-        ]
-        
-        for xpath in relist_xpaths:
-            try:
-                candidates = driver.find_elements(By.XPATH, xpath)
-                for btn in candidates:
-                    btn_text = btn.text.strip().lower()
-                    if 'clear' in btn_text or 'löschen' in btn_text:
-                        continue
-                    relist_button = btn
-                    logger.info(f"   ✓ 'Re-list All' Button gefunden via XPath: '{btn.text.strip()}'")
-                    break
-                if relist_button:
-                    break
-            except Exception:
-                continue
-                
-        # Strategie B: CSS Selektoren (exakter Match mit Button-Klassen)
-        if not relist_button:
-            relist_css = [
-                "button.btn-standard.section-header-btn.mini.primary",
-                "button.section-header-btn.mini.primary",
-                "button.btn-standard.section-header-btn",
-                "button.section-header-btn.primary",
-                "button.section-header-btn",
-            ]
-            for css in relist_css:
-                try:
-                    candidates = driver.find_elements(By.CSS_SELECTOR, css)
-                    for btn in candidates:
-                        btn_text = btn.text.strip().lower()
-                        if 'clear' in btn_text or 'löschen' in btn_text:
-                            continue
-                        relist_button = btn
-                        logger.info(f"   ✓ 'Re-list All' Button gefunden via CSS ({css}): '{btn.text.strip()}'")
-                        break
-                    if relist_button:
-                        break
-                except Exception:
-                    continue
-                    
         # Falls kein Button gefunden wurde:
         if not relist_button:
             if total_players == 0:
                 logger.info("ℹ️ Kein 'Re-list All' Button vorhanden (keine abgelaufenen Items auf der Transferliste)")
+                save_page_diagnostics(driver, "transfer_list_empty")
                 webhook_url = cfg.get('discord_webhook')
                 if webhook_url:
                     try:
@@ -1820,7 +1917,8 @@ def relist_all_transfer_items(driver, cfg):
                         pass
                 return 0
             else:
-                logger.warning("⚠️ 'Re-list All' Button konnte nicht gefunden werden!")
+                logger.warning(f"⚠️ 'Re-list All' Button konnte nicht gefunden werden (trotz {total_players} Spielern)!")
+                save_page_diagnostics(driver, "relist_button_missing_with_players")
                 return 0
                 
         # Prüfe ob Button deaktiviert ist
@@ -1842,7 +1940,7 @@ def relist_all_transfer_items(driver, cfg):
         except Exception:
             pass
 
-        # 4. Klicke "Re-list All" Button mit 3-Stufen Fallback
+        # 3. Klicke "Re-list All" Button mit 3-Stufen Fallback
         logger.info("🔄 Klicke 'Re-list All' Button...")
         
         # Scroll ins Zentrum des Sichtfelds
@@ -1870,7 +1968,10 @@ def relist_all_transfer_items(driver, cfg):
         # Stufe 3: JavaScript Klick (Garantiert, umgeht Overlay/Intercepting)
         if not clicked:
             try:
-                driver.execute_script("arguments[0].click();", relist_button)
+                driver.execute_script("""
+                    arguments[0].dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+                    arguments[0].click();
+                """, relist_button)
                 clicked = True
             except Exception as e:
                 logger.error(f"❌ Klick auf 'Re-list All' fehlgeschlagen: {e}")
@@ -1878,7 +1979,7 @@ def relist_all_transfer_items(driver, cfg):
                 
         logger.info("✅ 'Re-list All' Button erfolgreich geklickt")
         
-        # 5. Warte auf Bestätigungsdialog ("Yes" / "Ja")
+        # 4. Warte auf Bestätigungsdialog ("Yes" / "Ja")
         logger.info("⏳ Warte auf Bestätigungsdialog ('Yes' / 'Ja')...")
         human_like_delay(1.5, 2.5)
         
@@ -1935,7 +2036,10 @@ def relist_all_transfer_items(driver, cfg):
                     pass
             if not confirm_clicked:
                 try:
-                    driver.execute_script("arguments[0].click();", confirm_btn)
+                    driver.execute_script("""
+                        arguments[0].dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+                        arguments[0].click();
+                    """, confirm_btn)
                     confirm_clicked = True
                 except Exception:
                     pass
@@ -1947,7 +2051,7 @@ def relist_all_transfer_items(driver, cfg):
         else:
             logger.info("ℹ️ Kein Bestätigungsdialog erschienen (Re-List direkt ausgeführt)")
             
-        # 6. Warte auf Abschluss der Server-Aktion
+        # 5. Warte auf Abschluss der Server-Aktion
         logger.info("⏳ Warte auf Abschluss der Re-List Aktion...")
         human_like_delay(3, 5)
         

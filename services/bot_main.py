@@ -66,9 +66,20 @@ class EAFC27Bot:
         options.add_argument('--disable-blink-features=AutomationControlled')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--no-sandbox')
+        options.add_argument('--disable-extensions')
+        options.add_argument('--disable-popup-blocking')
+        options.add_argument('--disable-notifications')
+        options.add_argument('--start-maximized')
         options.add_argument('--ignore-gpu-blocklist')
         options.add_argument('--enable-webgl')
         options.add_argument('--enable-accelerated-2d-canvas')
+        
+        # Anti-Throttling (verhindert Einschlafen im Hintergrund/Xvfb)
+        options.add_argument('--disable-background-timer-throttling')
+        options.add_argument('--disable-backgrounding-occluded-windows')
+        options.add_argument('--disable-renderer-backgrounding')
+        options.add_argument('--disable-features=CalculateNativeWinOcclusion')
+        options.add_argument('--window-size=1920,1080')
         
         # User Agent (immer Windows für EA Kompatibilität)
         from .browser_utils import get_platform_user_agent, apply_stealth_overrides
