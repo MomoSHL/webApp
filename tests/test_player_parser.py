@@ -75,6 +75,35 @@ class TestPlayerParser(unittest.TestCase):
         self.assertEqual(invalid_res['total_count'], 0)
         self.assertEqual(invalid_res['unique_count'], 0)
 
+    def test_active_and_sold_items_ignored(self):
+        """Prüft dass aktive und bereits verkaufte Karten nicht als abgelaufen gezählt werden."""
+        active_html = """
+        <section class="ut-sectioned-item-list-view">
+            <header class="ut-section-header-view"><h2 class="title">Available Items</h2></header>
+            <ul class="itemList">
+                <li class="listFUTItem has-auction-data">
+                    <div class="name">Mbappe</div>
+                    <div class="rating">91</div>
+                    <div class="position">ST</div>
+                    <div class="auction-state"><span class="time">59m 30s</span></div>
+                </li>
+            </ul>
+        </section>
+        <section class="ut-sectioned-item-list-view">
+            <header class="ut-section-header-view"><h2 class="title">Sold Items</h2><button class="btn-standard section-header-btn mini primary">Clear Sold</button></header>
+            <ul class="itemList">
+                <li class="listFUTItem has-auction-data won">
+                    <div class="name">Haaland</div>
+                    <div class="rating">91</div>
+                    <div class="position">ST</div>
+                </li>
+            </ul>
+        </section>
+        """
+        res = parse_transfer_list_html(active_html)
+        self.assertEqual(res['total_count'], 0)
+        self.assertEqual(res['players'], [])
+
 
 if __name__ == '__main__':
     unittest.main()

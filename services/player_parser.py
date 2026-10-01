@@ -38,11 +38,49 @@ def parse_transfer_list_html(html_content: str) -> Dict[str, Any]:
     try:
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Finde alle Item-Karten auf der Transferliste
-        items = soup.select('li.listFUTItem')
-        if not items:
-            # Fallback falls li-Elemente andere Klassen haben
-            items = soup.select('.itemList li, .ut-sectioned-item-list-view li')
+        # 1. Finde alle Sektions-Header für Unsold / Nicht verkaufte Objekte
+        unsold_headers = []
+        has_other_sections = False
+        
+        for hdr in soup.select('header.ut-section-header-view, div.ut-section-header-view, header'):
+            title_elem = hdr.select_one('h2.title, .title, h2')
+            hdr_title = (title_elem.text if title_elem else hdr.text).strip().lower()
+            if any(k in hdr_title for k in ['unsold', 'nicht verkauft', 'abgelaufen', 'abgelaufene']):
+                unsold_headers.append(hdr)
+            elif any(k in hdr_title for k in ['available', 'verfügbar', 'active', 'aktiv', 'sold', 'verkauft']):
+                has_other_sections = True
+                
+        items = []
+        seen_items = set()
+        
+        if unsold_headers:
+            for hdr in unsold_headers:
+                parent_sec = hdr.find_parent('section') or hdr.find_parent('div', class_='ut-sectioned-item-list-view')
+                sec_items = parent_sec.select('li.listFUTItem') if parent_sec else []
+                if not sec_items and parent_sec:
+                    sec_items = parent_sec.select('.itemList li')
+                for itm in sec_items:
+                    if id(itm) not in seen_items:
+                        seen_items.add(id(itm))
+                        items.append(itm)
+        elif not has_other_sections:
+            # Keine expliziten Sektionen: Filtere alle li.listFUTItem nach 'expired'
+            for itm in soup.select('li.listFUTItem, .itemList li, .ut-sectioned-item-list-view li'):
+                itm_classes = " ".join(itm.get('class', []))
+                time_elem = itm.select_one('.auction-state .time, .auction-state')
+                time_txt = time_elem.text.strip().lower() if time_elem else ''
+                
+                is_expired = (
+                    'expired' in itm_classes or
+                    itm.select_one('.expired') is not None or
+                    'expired' in time_txt or
+                    'abgelaufen' in time_txt
+                )
+                is_active = any(unit in time_txt for unit in ['m', 'h', 's', 't', 'min', 'std', 'akt']) and not is_expired
+                
+                if is_expired and not is_active and id(itm) not in seen_items:
+                    seen_items.add(id(itm))
+                    items.append(itm)
             
         players = []
         for item in items:

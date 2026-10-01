@@ -1815,18 +1815,31 @@ def relist_all_transfer_items(driver, cfg):
         # Auf Ubuntu / Remote-Servern kann das 3-8 Sekunden dauern.
         logger.info("⏳ Lade Transferliste & prüfe abgelaufene Karten...")
         
+        # Finde den echten "Re-list All" Button (niemals Clear Sold oder leere Buttons)
+        def _is_valid_relist_btn(btn):
+            try:
+                txt = (btn.get_attribute("textContent") or btn.text or "").strip().lower()
+                if not txt:
+                    return False
+                if any(bad in txt for bad in ['clear', 'sold', 'löschen', 'verkauft', 'abholen', 'claim']):
+                    return False
+                if any(good in txt for good in ['re-list', 'relist', 'erneut', 'neu anbieten', 'anbieten']):
+                    return True
+                return False
+            except Exception:
+                return False
+
         relist_xpaths = [
-            "//button[contains(@class, 'section-header-btn') and (contains(., 'Re-list') or contains(., 're-list') or contains(., 'Erneut') or contains(., 'neu anbieten'))]",
-            "//button[contains(., 'Re-list All') or contains(., 're-list all') or contains(., 'RE-LIST ALL')]",
-            "//button[contains(., 'Erneut anbieten') or contains(., 'neu anbieten') or contains(., 'Neu anbieten')]",
-            "//button[contains(@class, 'section-header-btn') and contains(@class, 'primary')]",
+            "//header[contains(., 'Unsold') or contains(., 'Nicht verkauft') or contains(., 'Abgelaufen')]//button[contains(@class, 'section-header-btn')]",
+            "//button[contains(@class, 'section-header-btn') and (contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 're-list') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'erneut') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'neu anbieten'))]",
+            "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 're-list all') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 're-list')]",
+            "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'erneut anbieten') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'neu anbieten')]",
         ]
         relist_css = [
+            ".ut-sectioned-item-list-view header button.section-header-btn",
             "button.btn-standard.section-header-btn.mini.primary",
             "button.section-header-btn.mini.primary",
             "button.btn-standard.section-header-btn",
-            "button.section-header-btn.primary",
-            "button.section-header-btn",
         ]
         
         start_poll = time.time()
@@ -1837,7 +1850,7 @@ def relist_all_transfer_items(driver, cfg):
         while time.time() - start_poll < max_poll_time:
             dismiss_all_popups(driver)
             
-            # Extrahiere Spielerdaten aus aktuellem DOM
+            # Extrahiere abgelaufene Spielerdaten aus aktuellem DOM
             try:
                 page_html = driver.page_source
                 parsed_data = parse_transfer_list_html(page_html)
@@ -1850,10 +1863,7 @@ def relist_all_transfer_items(driver, cfg):
                 try:
                     candidates = driver.find_elements(By.XPATH, xpath)
                     for btn in candidates:
-                        btn_text = btn.text.strip().lower()
-                        if 'clear' in btn_text or 'löschen' in btn_text:
-                            continue
-                        if btn.is_displayed() or btn.is_enabled():
+                        if _is_valid_relist_btn(btn) and (btn.is_displayed() or btn.is_enabled()):
                             found_btn = btn
                             break
                     if found_btn:
@@ -1866,10 +1876,7 @@ def relist_all_transfer_items(driver, cfg):
                     try:
                         candidates = driver.find_elements(By.CSS_SELECTOR, css)
                         for btn in candidates:
-                            btn_text = btn.text.strip().lower()
-                            if 'clear' in btn_text or 'löschen' in btn_text:
-                                continue
-                            if btn.is_displayed() or btn.is_enabled():
+                            if _is_valid_relist_btn(btn) and (btn.is_displayed() or btn.is_enabled()):
                                 found_btn = btn
                                 break
                         if found_btn:
@@ -1917,7 +1924,7 @@ def relist_all_transfer_items(driver, cfg):
                         pass
                 return 0
             else:
-                logger.warning(f"⚠️ 'Re-list All' Button konnte nicht gefunden werden (trotz {total_players} Spielern)!")
+                logger.warning(f"⚠️ 'Re-list All' Button konnte nicht gefunden werden (trotz {total_players} abgelaufener Spieler)!")
                 save_page_diagnostics(driver, "relist_button_missing_with_players")
                 return 0
                 
@@ -1985,15 +1992,24 @@ def relist_all_transfer_items(driver, cfg):
         
         confirm_btn = None
         confirm_selectors = [
-            "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'dialog') or contains(@class, 'ut-button-group')]//button[contains(., 'Yes') or contains(., 'Ja') or contains(@class, 'primary')]",
-            "//button[contains(@class, 'btn-standard') and (contains(., 'Yes') or contains(., 'Ja') or contains(., 'YES') or contains(., 'JA'))]",
-            "//button[normalize-space(text())='Yes' or normalize-space(text())='Ja']",
-            "//button[contains(., 'Yes') or contains(., 'Ja')]",
-            ".view-modal-container button.primary",
-            ".ut-button-group button.btn-standard.primary",
-            ".ut-button-group button.primary",
-            "button.btn-standard.primary",
+            "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'dialog')]//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'yes') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'ja') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'ok') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'confirm') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'erneut') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 're-list')]",
+            "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal')]//div[contains(@class, 'ut-button-group')]//button[contains(@class, 'primary')]",
+            "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal')]//button[contains(@class, 'btn-standard')]",
         ]
+        
+        def _is_valid_confirm_btn(el):
+            try:
+                txt = (el.get_attribute("textContent") or el.text or "").strip().lower()
+                if any(bad in txt for bad in ['cancel', 'abbrechen', 'nein', 'no', 'clear', 'sold', 'löschen', 'close']):
+                    return False
+                if txt and any(good in txt for good in ['yes', 'ja', 'ok', 'confirm', 'bestätigen', 're-list', 'erneut', 'weiter']):
+                    return True
+                cls = (el.get_attribute("class") or "").lower()
+                if 'primary' in cls and (not txt or txt in ['yes', 'ja', 'ok']):
+                    return True
+                return False
+            except Exception:
+                return False
         
         for sel in confirm_selectors:
             try:
@@ -2003,13 +2019,9 @@ def relist_all_transfer_items(driver, cfg):
                     elements = driver.find_elements(By.CSS_SELECTOR, sel)
                     
                 for el in elements:
-                    txt = el.text.strip().lower()
-                    # Schließe Ablehnung / Cancel aus
-                    if any(neg in txt for neg in ['cancel', 'abbrechen', 'nein']) or (txt == 'no'):
-                        continue
-                    if el.is_displayed() or el.is_enabled():
+                    if _is_valid_confirm_btn(el) and (el.is_displayed() or el.is_enabled()):
                         confirm_btn = el
-                        logger.info(f"   ✓ Bestätigungs-Button gefunden: '{el.text.strip()}'")
+                        logger.info(f"   ✓ Bestätigungs-Button gefunden: '{el.text.strip() or el.get_attribute('textContent') or ''}'")
                         break
                 if confirm_btn:
                     break
