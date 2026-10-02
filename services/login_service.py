@@ -14,11 +14,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ea_fc27_bot import (
     login_via_ui,
-    handle_2fa
+    handle_2fa,
+    is_logged_in_ui
 )
 
 # Re-Export
 __all__ = [
     'login_via_ui',
-    'handle_2fa'
+    'handle_2fa',
+    'is_logged_in_ui'
 ]

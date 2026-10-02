@@ -1026,7 +1026,7 @@ def dismiss_all_popups(driver, max_passes: int = 5) -> int:
         # Selektoren für Popout-Schließen / Bestätigen
         popup_button_xpaths = [
             # 1. Spezifische Text-Buttons in Livemessages, Dialogen & Modal-Containern
-            "//div[contains(@class, 'ut-livemessage') or contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view') or contains(@class, 'ut-popup-view') or contains(@class, 'ut-feature-walkthrough-view') or contains(@class, 'ut-notification-view') or contains(@class, 'dialog-body') or contains(@class, 'ut-livemessage-footer')]//button[contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren') or contains(., 'Next') or contains(., 'Vorwärts') or contains(., 'Got it') or contains(., 'Verstanden') or contains(., 'Claim Later') or contains(., 'Später anfordern') or contains(., 'Später') or contains(., 'Skip') or contains(., 'Überspringen') or contains(., 'I Agree') or contains(., 'Agree') or contains(., 'Accept') or contains(., 'Akzeptieren') or contains(., 'Done') or contains(., 'Fertig') or contains(., 'Close') or contains(., 'Schließen') or normalize-space(text())='OK' or normalize-space(text())='Ok']",
+            "//div[contains(@class, 'ut-livemessage') or contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view') or contains(@class, 'ut-popup-view') or contains(@class, 'ut-feature-walkthrough-view') or contains(@class, 'ut-notification-view') or contains(@class, 'dialog-body') or contains(@class, 'ut-livemessage-footer')]//button[contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren') or contains(., 'Next') or contains(., 'Vorwärts') or contains(., 'Got it') or contains(., 'Verstanden') or contains(., 'Claim Later') or contains(., 'Später anfordern') or contains(., 'Später') or contains(., 'Skip') or contains(., 'Überspringen') or contains(., 'I Agree') or contains(., 'Agree') or contains(., 'Accept') or contains(., 'Akzeptieren') or contains(., 'Done') or contains(., 'Fertig') or contains(., 'Close') or contains(., 'Schließen') or contains(., 'Reload') or contains(., 'Neu laden') or contains(., 'Refresh') or contains(., 'Erneut laden') or normalize-space(text())='OK' or normalize-space(text())='Ok']",
             
             # 2. Explizite Buttons in ut-livemessage-footer (z.B. Continue, Check it Out)
             "//div[contains(@class, 'ut-livemessage')]//button[contains(@class, 'btn-standard') and (contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren'))]",
@@ -1037,8 +1037,8 @@ def dismiss_all_popups(driver, max_passes: int = 5) -> int:
             # 3. Explizite Schließen-Buttons in Dialogen
             "//div[contains(@class, 'ea-dialog-view') or contains(@class, 'view-modal') or contains(@class, 'ut-messages-view') or contains(@class, 'ut-popup-view')]//button[contains(@class, 'close-btn') or contains(@class, 'close') or contains(@class, 'dismiss') or contains(@class, 'icon-close')]",
             
-            # 4. Standard 'Continue', 'Weiter', 'Next' Buttons in WebApp
-            "//button[contains(@class, 'btn-standard') and (contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren') or contains(., 'Next') or normalize-space(text())='OK' or normalize-space(text())='Ok' or contains(., 'Got it') or contains(., 'Verstanden') or contains(., 'Claim Later') or contains(., 'Skip') or contains(., 'Überspringen'))]",
+            # 4. Standard 'Continue', 'Weiter', 'Next', 'Reload' Buttons in WebApp
+            "//button[contains(@class, 'btn-standard') and (contains(., 'Continue') or contains(., 'Weiter') or contains(., 'Fortfahren') or contains(., 'Next') or contains(., 'Reload') or contains(., 'Neu laden') or normalize-space(text())='OK' or normalize-space(text())='Ok' or contains(., 'Got it') or contains(., 'Verstanden') or contains(., 'Claim Later') or contains(., 'Skip') or contains(., 'Überspringen'))]",
             
             # 5. Standard Dialog Close Buttons
             "button.flat.close-btn",
@@ -1066,7 +1066,7 @@ def dismiss_all_popups(driver, max_passes: int = 5) -> int:
                     btn_text_lower = btn_text.lower()
                     
                     # Schließe Re-List Confirmation Dialoge und Gerätekonflikt-Buttons aus!
-                    if any(kw in btn_text_lower for kw in ['re-list', 'erneut anbieten', 'retry', 'wiederholen', 'change', 'ändern', 'transfers', 'abbrechen']):
+                    if any(kw in btn_text_lower for kw in ['re-list', 'erneut anbieten', 'change', 'ändern', 'transfers', 'abbrechen']):
                         continue
                         
                     # Extrahiere optionalen Titel des Popouts
@@ -1225,6 +1225,43 @@ def check_already_logged_in_elsewhere(driver) -> bool:
     except Exception as e:
         logger.debug(f"🔍 Debug: check_already_logged_in_elsewhere Fehler: {e}")
         return False
+
+
+def is_logged_in_ui(driver) -> bool:
+    """
+    Prüft schnell und zuverlässig im Browser-DOM, ob die WebApp aktuell
+    eingeloggt ist und der Ultimate Team Hub bzw. die Navigationsleiste angezeigt wird.
+    
+    Returns:
+        bool: True wenn Hub / Navigation aktiv und sichtbar ist
+    """
+    if not driver:
+        return False
+    try:
+        # Prüfe ob Driver responsive ist
+        _ = driver.current_url
+    except Exception:
+        return False
+
+    # Schneller Check auf Hub / Tab-Bar Indikatoren
+    logged_in_selectors = [
+        "button.ut-tab-bar-item.icon-transfer",
+        ".ut-tab-bar-item.icon-transfer",
+        "button.icon-transfer",
+        ".ut-navigation-container-view",
+        ".ut-hub-view",
+        "button.ut-tab-bar-item",
+        "nav.ut-tab-bar",
+        ".ut-sectioned-item-list-view"
+    ]
+    for sel in logged_in_selectors:
+        try:
+            elems = driver.find_elements(By.CSS_SELECTOR, sel)
+            if elems and any(e.is_displayed() for e in elems):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def login_via_ui(driver, cfg):
@@ -1612,7 +1649,8 @@ def _is_on_transfer_list_view(driver) -> bool:
         "//div[contains(@class, 'ut-item-list-view')]",
         "//ul[contains(@class, 'itemList')]",
         "//button[contains(@class, 'section-header-btn') and (contains(., 'Re-list') or contains(., 're-list') or contains(., 'Erneut') or contains(., 'neu') or contains(., 'Clear') or contains(., 'löschen'))]",
-        "//button[contains(@class, 'ut-navigation-button-control') or contains(@class, 'ut-navigation-bar-back-button')]"
+        "//h1[contains(., 'Transfer List') or contains(., 'Transferliste')]",
+        "//div[contains(@class, 'title') and (contains(., 'Transfer List') or contains(., 'Transferliste'))]"
     ]
     for xpath in tl_signatures:
         try:
@@ -1675,32 +1713,54 @@ def navigate_to_transfer_list(driver, cfg):
                 transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=8, condition="clickable")
                 
             if not transfer_tab:
+                # Prüfe Gerätekonflikt
+                if check_already_logged_in_elsewhere(driver):
+                    save_page_diagnostics(driver, "err_device_conflict_nav")
+                    return False
+                    
+                # Prüfe ob WebApp ausgeloggt ist oder Session abgelaufen ist
+                if not is_logged_in_ui(driver):
+                    logger.warning("⚠️ Transfer-Tab nicht gefunden: Session möglicherweise abgelaufen. Versuche automatische Re-Authentifizierung...")
+                    login_recovered = login_via_ui(driver, cfg)
+                    if login_recovered is True:
+                        logger.info("🔄 Re-Login erfolgreich! Wiederhole Navigation zur Transfer-Liste...")
+                        dismiss_all_popups(driver)
+                        # Prüfe direkt ob wir nach Login auf Transfer List oder Hub gelandet sind
+                        if _is_on_transfer_list_view(driver):
+                            logger.info("✅ Bereits auf der Transfer-Liste (nach Re-Login)")
+                            return True
+                        transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=4, condition="visible")
+                        if not transfer_tile:
+                            transfer_tab = find_element_with_fallbacks(driver, tab_selectors, timeout=8, condition="clickable")
+                
+            if not transfer_tab and not transfer_tile:
                 logger.error("❌ Transfer-Tab nicht gefunden")
                 save_page_diagnostics(driver, "err_transfer_tab_not_found")
                 return False
                 
-            random_mouse_movements(driver, num_movements=2)
-            human_like_delay(0.3, 0.6)
-            
-            try:
-                transfer_tab.click()
-            except Exception:
-                dismiss_all_popups(driver)
-                try:
-                    driver.execute_script("arguments[0].click();", transfer_tab)
-                except Exception as e:
-                    logger.error(f"❌ Klick auf Transfer-Tab fehlgeschlagen: {e}")
-                    return False
+            if transfer_tab and not transfer_tile:
+                random_mouse_movements(driver, num_movements=2)
+                human_like_delay(0.3, 0.6)
                 
-            logger.info("🖱️ Klick auf 'Transfers'-Tab (erfolgreich geöffnet)")
-            human_like_delay(1.5, 2.5)
-            dismiss_all_popups(driver)
-            
-            # Jetzt Transfer-Tile auf der Transfers-Hub-Seite suchen
-            transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=8, condition="visible")
-            if not transfer_tile:
+                try:
+                    transfer_tab.click()
+                except Exception:
+                    dismiss_all_popups(driver)
+                    try:
+                        driver.execute_script("arguments[0].click();", transfer_tab)
+                    except Exception as e:
+                        logger.error(f"❌ Klick auf Transfer-Tab fehlgeschlagen: {e}")
+                        return False
+                    
+                logger.info("🖱️ Klick auf 'Transfers'-Tab (erfolgreich geöffnet)")
+                human_like_delay(1.5, 2.5)
                 dismiss_all_popups(driver)
-                transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=6, condition="visible")
+                
+                # Jetzt Transfer-Tile auf der Transfers-Hub-Seite suchen
+                transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=8, condition="visible")
+                if not transfer_tile:
+                    dismiss_all_popups(driver)
+                    transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=6, condition="visible")
         
         if not transfer_tile:
             # Prüfe ob wir vielleicht schon direkt auf der Transfer-Liste sind

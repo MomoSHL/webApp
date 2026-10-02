@@ -202,6 +202,18 @@ class EAFC27Bot:
             
             return False
     
+    def is_logged_in(self) -> bool:
+        """
+        Prüft im Browser-DOM, ob die WebApp aktuell aktiv eingeloggt ist.
+        
+        Returns:
+            True wenn eingeloggt und Hub/Navigation sichtbar ist
+        """
+        if not self.session or not self.session.driver:
+            return False
+        from .browser_utils import is_logged_in_ui
+        return is_logged_in_ui(self.session.driver)
+    
     def relist_all(self) -> int:
         """
         Listet alle Transfer-Spieler neu an.
@@ -278,8 +290,11 @@ class EAFC27Bot:
                 logger.error("❌ Session konnte nicht erstellt werden")
                 return False, "session_failed"
             
-            # Login
-            if not self.session.state.is_logged_in:
+            # 1. Prüfe ob WebApp tatsächlich aktiv im Browser eingeloggt ist
+            # Nach Wartezeiten (z.B. 60+ min im Idle-Tab) läuft die EA-Session oft ab!
+            if not self.is_logged_in():
+                self.session.state.is_logged_in = False
+                logger.info("🔐 WebApp-Session inaktiv oder abgelaufen. Führe Authentifizierung/Login durch...")
                 login_success = self.login()
                 if login_success is None:
                     self.session.state.last_status = "already_logged_in"
@@ -289,8 +304,11 @@ class EAFC27Bot:
                     self.session.state.last_status = "login_failed"
                     logger.error("❌ Bot-Job fehlgeschlagen: Login nicht erfolgreich")
                     return False, "login_failed"
+            else:
+                self.session.state.is_logged_in = True
+                logger.info("✅ WebApp-Session ist aktiv (Hub bereit)")
             
-            # Re-List
+            # 2. Re-List
             relist_count = self.relist_all()
             
             if relist_count >= 0:
@@ -300,6 +318,8 @@ class EAFC27Bot:
             else:
                 logger.error("❌ Bot-Job teilweise fehlgeschlagen")
                 self.session.state.last_status = "relist_failed"
+                # Falls Re-List fehlschlägt, Session-State zurücksetzen für nächsten Durchlauf
+                self.session.state.is_logged_in = False
                 return False, "relist_failed"
                 
         except Exception as e:

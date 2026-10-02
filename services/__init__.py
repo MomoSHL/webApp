@@ -22,11 +22,11 @@ def __getattr__(name):
         return getattr(bot_helpers, name)
     elif name in (
         'init_browser', 'get_platform_user_agent', 'apply_stealth_overrides', 'save_cookies', 'load_cookies',
-        'switch_to_idle_tab', 'switch_to_webapp_tab', 'check_already_logged_in_elsewhere'
+        'switch_to_idle_tab', 'switch_to_webapp_tab', 'check_already_logged_in_elsewhere', 'is_logged_in_ui'
     ):
         from . import browser_utils
         return getattr(browser_utils, name)
-    elif name in ('login_via_ui', 'handle_2fa'):
+    elif name in ('login_via_ui', 'handle_2fa', 'is_logged_in_ui'):
         from . import login_service
         return getattr(login_service, name)
     elif name in ('relist_all_transfer_items', 'navigate_to_transfer_list'):
@@ -83,6 +83,7 @@ __all__ = [
     # Login Service
     'login_via_ui',
     'handle_2fa',
+    'is_logged_in_ui',
     
     # Relist Service
     'relist_all_transfer_items',

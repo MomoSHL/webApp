@@ -23,7 +23,8 @@ from ea_fc27_bot import (
     load_cookies,
     switch_to_idle_tab,
     switch_to_webapp_tab,
-    check_already_logged_in_elsewhere
+    check_already_logged_in_elsewhere,
+    is_logged_in_ui
 )
 
 
@@ -113,5 +114,6 @@ __all__ = [
     'load_cookies',
     'switch_to_idle_tab',
     'switch_to_webapp_tab',
-    'check_already_logged_in_elsewhere'
+    'check_already_logged_in_elsewhere',
+    'is_logged_in_ui'
 ]
