@@ -134,7 +134,7 @@ class TestBotConfigAndLogger(unittest.TestCase):
         self.assertTrue(continue_btn.clicked)
 
     def test_transfer_list_view_detection(self):
-        """Testet die Erkennung der Transfer-Listen-Ansicht."""
+        """Testet die Erkennung der Transfer-Listen-Ansicht und Ausschluss von Home-Tab."""
         from ea_fc27_bot import _is_on_transfer_list_view
         
         class MockElement:
@@ -142,21 +142,43 @@ class TestBotConfigAndLogger(unittest.TestCase):
                 return True
                 
         class MockDriver:
-            def __init__(self, match_xpath=True):
-                self.match_xpath = match_xpath
+            def __init__(self, mode="transfer_list"):
+                self.mode = mode
                 
             def find_elements(self, by, value):
-                if self.match_xpath and "ut-sectioned-item-list-view" in value:
-                    return [MockElement()]
+                val_lower = value.lower()
+                # Modus Home: Home Tab ist selected
+                if self.mode == "home_tab":
+                    if "icon-home.selected" in val_lower:
+                        return [MockElement()]
+                    return []
+                # Modus Hub: Transfer Tile auf Hub ist sichtbar
+                elif self.mode == "transfers_hub":
+                    if "ut-tile-transfer-list" in val_lower:
+                        return [MockElement()]
+                    return []
+                # Modus Transfer List: Title im Navbar vorhanden
+                elif self.mode == "transfer_list":
+                    if "transfer list" in val_lower:
+                        return [MockElement()]
+                    return []
                 return []
                 
-        # Fall 1: Element vorhanden
-        driver_on_list = MockDriver(match_xpath=True)
+        # Fall 1: Auf Transferliste -> True
+        driver_on_list = MockDriver(mode="transfer_list")
         self.assertTrue(_is_on_transfer_list_view(driver_on_list))
         
-        # Fall 2: Element nicht vorhanden
-        driver_not_on_list = MockDriver(match_xpath=False)
-        self.assertFalse(_is_on_transfer_list_view(driver_not_on_list))
+        # Fall 2: Auf Home-Tab (selbst wenn andere Listen-Elemente da wären) -> False
+        driver_on_home = MockDriver(mode="home_tab")
+        self.assertFalse(_is_on_transfer_list_view(driver_on_home))
+
+        # Fall 3: Auf Transfers-Hub (vor Klick auf Transferliste-Tile) -> False
+        driver_on_hub = MockDriver(mode="transfers_hub")
+        self.assertFalse(_is_on_transfer_list_view(driver_on_hub))
+        
+        # Fall 4: Unbekannte Seite -> False
+        driver_unknown = MockDriver(mode="unknown")
+        self.assertFalse(_is_on_transfer_list_view(driver_unknown))
 
 
 if __name__ == '__main__':

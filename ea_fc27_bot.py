@@ -1641,24 +1641,65 @@ def login_via_ui(driver, cfg):
 # ============================================================================
 
 def _is_on_transfer_list_view(driver) -> bool:
-    """Prüft ob der Browser sich aktuell in der Transfer-Listen-Ansicht befindet."""
-    tl_signatures = [
-        "//div[contains(@class, 'ut-sectioned-item-list-view')]",
-        "//section[contains(@class, 'ut-sectioned-item-list-view')]",
-        "//div[contains(@class, 'ut-pinned-list-container')]",
-        "//div[contains(@class, 'ut-item-list-view')]",
-        "//ul[contains(@class, 'itemList')]",
-        "//button[contains(@class, 'section-header-btn') and (contains(., 'Re-list') or contains(., 're-list') or contains(., 'Erneut') or contains(., 'neu') or contains(., 'Clear') or contains(., 'löschen'))]",
-        "//h1[contains(., 'Transfer List') or contains(., 'Transferliste')]",
-        "//div[contains(@class, 'title') and (contains(., 'Transfer List') or contains(., 'Transferliste'))]"
-    ]
-    for xpath in tl_signatures:
-        try:
-            elems = driver.find_elements(By.XPATH, xpath)
-            if elems and any(e.is_displayed() for e in elems):
-                return True
-        except Exception:
-            continue
+    """
+    Prüft absolut zuverlässig, ob der Browser sich aktuell in der Transfer-Listen-Ansicht befindet.
+    Schließt Home-Tab, andere Tabs und den Transfers-Hub strikt aus.
+    """
+    try:
+        # 1. Wenn ein anderer Tabbar-Button (z.B. Home, Squads) aktiv/selected ist -> Definitiv NICHT auf Transferliste!
+        other_selected_tabs = driver.find_elements(
+            By.CSS_SELECTOR, 
+            "button.ut-tab-bar-item.icon-home.selected, "
+            "button.ut-tab-bar-item.icon-squad.selected, "
+            "button.ut-tab-bar-item.icon-club.selected, "
+            "button.ut-tab-bar-item.icon-sbc.selected, "
+            "button.ut-tab-bar-item.icon-store.selected, "
+            ".ut-tab-bar-item.icon-home.selected"
+        )
+        if other_selected_tabs and any(t.is_displayed() for t in other_selected_tabs):
+            return False
+
+        # 2. Wenn das Transfer-List Tile auf dem Transfers-Hub noch sichtbar ist -> Wir sind noch auf dem Hub, nicht IN der Liste!
+        hub_tiles = driver.find_elements(By.CSS_SELECTOR, ".tile.ut-tile-transfer-list, div.ut-tile-transfer-list")
+        if hub_tiles and any(t.is_displayed() for t in hub_tiles):
+            return False
+
+        # 3. Eindeutige Kennzeichen der Transferliste:
+        # A) Header-Titel "Transfer List" / "Transferliste" im Navigation-Header
+        header_titles = driver.find_elements(
+            By.XPATH,
+            "//div[contains(@class, 'ut-navigation-bar-view')]//h1[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'transfer list') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'transferliste')]"
+        )
+        if header_titles and any(h.is_displayed() for h in header_titles):
+            return True
+
+        # B) Transferliste Section-Header (Unsold / Available / Sold / Nicht verkauft / Verfügbar)
+        section_headers = driver.find_elements(
+            By.XPATH,
+            "//header[contains(@class, 'ut-section-header-view')]//h2[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'unsold') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'nicht verkauft') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'available') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'verfügbar') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'sold') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'verkauft')]"
+        )
+        if section_headers and any(s.is_displayed() for s in section_headers):
+            return True
+
+        # C) Vorhandener "Re-list All" oder "Clear Sold" Button in einem Section Header
+        relist_btns = driver.find_elements(
+            By.XPATH,
+            "//header[contains(@class, 'ut-section-header-view')]//button[contains(@class, 'section-header-btn') and (contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 're-list') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'relist') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'erneut') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'neu anbieten') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'clear') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'löschen'))]"
+        )
+        if relist_btns and any(b.is_displayed() for b in relist_btns):
+            return True
+
+        # D) Leere Transferliste State (z.B. "No items" Meldung innerhalb der Transferliste)
+        empty_tl = driver.find_elements(
+            By.XPATH,
+            "//div[contains(@class, 'ut-sectioned-item-list-view')]//div[contains(@class, 'ut-no-items') or contains(@class, 'ut-empty-view')]"
+        )
+        if empty_tl and any(e.is_displayed() for e in empty_tl):
+            return True
+
+    except Exception:
+        pass
+
     return False
 
 
@@ -1725,7 +1766,6 @@ def navigate_to_transfer_list(driver, cfg):
                     if login_recovered is True:
                         logger.info("🔄 Re-Login erfolgreich! Wiederhole Navigation zur Transfer-Liste...")
                         dismiss_all_popups(driver)
-                        # Prüfe direkt ob wir nach Login auf Transfer List oder Hub gelandet sind
                         if _is_on_transfer_list_view(driver):
                             logger.info("✅ Bereits auf der Transfer-Liste (nach Re-Login)")
                             return True
@@ -1742,22 +1782,50 @@ def navigate_to_transfer_list(driver, cfg):
                 random_mouse_movements(driver, num_movements=2)
                 human_like_delay(0.3, 0.6)
                 
-                try:
-                    transfer_tab.click()
-                except Exception:
-                    dismiss_all_popups(driver)
+                # Multi-Methoden-Klick auf Transfer-Tab
+                def _click_tab(elem):
                     try:
-                        driver.execute_script("arguments[0].click();", transfer_tab)
-                    except Exception as e:
-                        logger.error(f"❌ Klick auf Transfer-Tab fehlgeschlagen: {e}")
+                        elem.click()
+                        return True
+                    except Exception:
+                        pass
+                    try:
+                        driver.execute_script("""
+                            arguments[0].dispatchEvent(new MouseEvent('pointerdown', {bubbles: true, cancelable: true, view: window}));
+                            arguments[0].dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window}));
+                            arguments[0].dispatchEvent(new MouseEvent('pointerup', {bubbles: true, cancelable: true, view: window}));
+                            arguments[0].dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true, view: window}));
+                            arguments[0].dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+                            arguments[0].click();
+                        """, elem)
+                        return True
+                    except Exception:
                         return False
-                    
-                logger.info("🖱️ Klick auf 'Transfers'-Tab (erfolgreich geöffnet)")
-                human_like_delay(1.5, 2.5)
+
+                _click_tab(transfer_tab)
+                logger.info("🖱️ Klick auf 'Transfers'-Tab ausgeführt")
+                human_like_delay(1.0, 1.8)
                 dismiss_all_popups(driver)
                 
-                # Jetzt Transfer-Tile auf der Transfers-Hub-Seite suchen
-                transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=8, condition="visible")
+                # Verifiziere ob Tab tatsächlich gewechselt hat (Transfers-Tab aktiv oder Tile sichtbar)
+                start_tab_wait = time.time()
+                while time.time() - start_tab_wait < 6.0:
+                    transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=1, condition="visible")
+                    if transfer_tile:
+                        break
+                    # Falls Home noch aktiv ist, Klick wiederholen
+                    is_home = driver.find_elements(By.CSS_SELECTOR, "button.ut-tab-bar-item.icon-home.selected, .ut-tab-bar-item.icon-home.selected")
+                    if is_home and any(h.is_displayed() for h in is_home):
+                        try:
+                            driver.execute_script("""
+                                arguments[0].dispatchEvent(new MouseEvent('pointerdown', {bubbles: true, cancelable: true, view: window}));
+                                arguments[0].dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+                                arguments[0].click();
+                            """, transfer_tab)
+                        except Exception:
+                            pass
+                    time.sleep(0.5)
+
                 if not transfer_tile:
                     dismiss_all_popups(driver)
                     transfer_tile = find_element_with_fallbacks(driver, tile_selectors, timeout=6, condition="visible")
@@ -1974,6 +2042,12 @@ def relist_all_transfer_items(driver, cfg):
         # Falls kein Button gefunden wurde:
         if not relist_button:
             if total_players == 0:
+                # Sicherheits-Check: Befinden wir uns tatsächlich auf der Transferliste?
+                if not _is_on_transfer_list_view(driver):
+                    logger.error("❌ Bot befindet sich nicht auf der Transferliste (View-Verifikation fehlgeschlagen)!")
+                    save_page_diagnostics(driver, "err_not_on_transfer_list")
+                    return -1
+
                 logger.info("ℹ️ Kein 'Re-list All' Button vorhanden (keine abgelaufenen Items auf der Transferliste)")
                 save_page_diagnostics(driver, "transfer_list_empty")
                 webhook_url = cfg.get('discord_webhook')
