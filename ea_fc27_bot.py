@@ -2404,6 +2404,17 @@ def main():
         logger.critical(f"💥 Konfigurationsdatei nicht gefunden: {e}")
         return 1
     
+    # CLI Argumente prüfen (z.B. --test)
+    import argparse
+    parser = argparse.ArgumentParser(description="EA FC27 WebApp Bot")
+    parser.add_argument("--test", "-t", action="store_true", help="Einmaliger Testlauf")
+    parser.add_argument("--headless", action="store_true", help="Headless-Modus")
+    args, _ = parser.parse_known_args()
+    if args.test:
+        cfg['test_mode'] = True
+    if args.headless:
+        cfg['headless'] = True
+        
     schedule = cfg.get('schedule', {'type': 'interval', 'hours': 1})
     
     # Test-Modus: Einmalige Ausführung
