@@ -926,8 +926,13 @@ def save_page_diagnostics(driver, stage_name: str):
         try:
             raw_logs = driver.get_log("browser")
             for entry in raw_logs:
-                if entry.get("level") in ["SEVERE", "WARNING"]:
-                    console_logs.append(f"[{entry.get('level')}] {entry.get('message')}")
+                level = entry.get("level")
+                msg = entry.get("message", "")
+                # Filtere harmlose Browser/Asset-Warnungen der EA-Webseite heraus (z.B. PackAnimation Preloads, Fonts)
+                if any(ignored in msg.lower() for ignored in ["preloaded using link preload", "sourcemap", "source map", "favicon"]):
+                    continue
+                if level == "SEVERE":
+                    console_logs.append(f"[{level}] {msg}")
         except Exception:
             pass
             
@@ -940,7 +945,7 @@ def save_page_diagnostics(driver, stage_name: str):
         if inp_info:
             logger.debug(f"   • Inputs ({len(inp_info)}): {inp_info[:6]}")
         if console_logs:
-            logger.debug(f"   • Browser-Fehler ({len(console_logs)}):")
+            logger.debug(f"   • Browser Console-Fehler ({len(console_logs)}):")
             for cl in console_logs[:3]:
                 logger.debug(f"     ⚠ {cl}")
                 
