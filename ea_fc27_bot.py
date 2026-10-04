@@ -881,7 +881,7 @@ def handle_2fa(driver, wait):
 
 def save_page_diagnostics(driver, stage_name: str):
     """
-    Speichert detaillierte Diagnose-Informationen (Screenshot, HTML-Dump, URL, Titel, DOM-Ausschnitt, Console-Logs).
+    Speichert detaillierte Diagnose-Informationen (HTML-Dump, URL, Titel, DOM-Ausschnitt, Console-Logs).
     """
     try:
         diag_dir = Path("logs") / "diagnostics"
@@ -889,16 +889,12 @@ def save_page_diagnostics(driver, stage_name: str):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         prefix = f"{timestamp}_{stage_name}"
         
-        # 1. Screenshot speichern
-        screenshot_path = diag_dir / f"{prefix}.png"
-        driver.save_screenshot(str(screenshot_path))
-        
-        # 2. HTML Quelle speichern
+        # 1. HTML Quelle speichern
         html_path = diag_dir / f"{prefix}.html"
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(driver.page_source)
             
-        # 3. Detaillierte Infos erfassen
+        # 2. Detaillierte Infos erfassen
         cur_url = driver.current_url
         cur_title = driver.title
         
@@ -947,7 +943,6 @@ def save_page_diagnostics(driver, stage_name: str):
             logger.debug(f"   • Browser-Fehler ({len(console_logs)}):")
             for cl in console_logs[:3]:
                 logger.debug(f"     ⚠ {cl}")
-        logger.debug(f"   • Screenshot: {screenshot_path}")
                 
     except Exception as e:
         logger.debug(f"Diagnose-Erfassung fehlgeschlagen: {e}")
