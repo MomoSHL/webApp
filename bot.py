@@ -261,22 +261,6 @@ def main():
     # Konfiguration laden
     try:
         config = BotConfig.from_yaml(config_path)
-        
-        # CLI Argumente prüfen (z.B. --test für einmaligen Testlauf)
-        import argparse
-        parser = argparse.ArgumentParser(description="EA FC27 WebApp Bot")
-        parser.add_argument("--test", "-t", action="store_true", help="Einmaliger Testlauf")
-        parser.add_argument("--headless", action="store_true", help="Headless-Modus erzwingen")
-        parser.add_argument("--no-headless", action="store_true", help="UI-Modus erzwingen")
-        args, _ = parser.parse_known_args()
-        
-        if args.test:
-            config.test_mode = True
-        if args.headless:
-            config.headless = True
-        elif args.no_headless:
-            config.headless = False
-            
         config.validate()
         
         # Discord Webhook Logging aktivieren (falls konfiguriert)
